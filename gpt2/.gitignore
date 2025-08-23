@@ -1,0 +1,8 @@
+*.pt
+
+_dataset
+_tokenizer
+_model.json
+_tokenizer.json
+ckpts
+tiny-gpt
