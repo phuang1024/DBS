@@ -31,7 +31,8 @@ class BackslashCallback(TrainerCallback):
     def on_step_end(self, args, state, control, **kwargs):
         model = kwargs['model']
         if model is not None:
-            self.fn(model)
+            res = self.fn(model)
+            print(res)
         return control
 
 
