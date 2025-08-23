@@ -2,7 +2,7 @@
 Train model.
 """
 
-DO_BACKSLASH = False
+DO_BACKSLASH = True
 
 from datasets import load_from_disk
 from transformers import (
@@ -36,6 +36,7 @@ class BackslashCallback(TrainerCallback):
 
 
 # Train phase one: Yes backslash
+# 3 epochs
 if DO_BACKSLASH:
     print("Training phase one: Yes backslash")
 
@@ -67,8 +68,11 @@ if DO_BACKSLASH:
         callbacks=[BackslashCallback(backslash)],
     )
 
+    trainer.train()
+
 
 # Train phase two: No backslash
+# 8 epochs
 print("Training phase two: No backslash")
 
 args = TrainingArguments(
@@ -76,7 +80,7 @@ args = TrainingArguments(
     per_device_train_batch_size=8,
     per_device_eval_batch_size=8,
     gradient_accumulation_steps=2,   # effective batch 16
-    num_train_epochs=3,
+    num_train_epochs=8,
     learning_rate=3e-4,
     warmup_ratio=0.03,
     weight_decay=0.1,
