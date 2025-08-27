@@ -4,6 +4,23 @@ Train model.
 
 DO_BACKSLASH = True
 
+# Print DDP config.
+import torch
+import torch.distributed as dist
+
+if not dist.is_initialized():
+    # Setup DDP
+    print("Initializing DDP")
+    dist.init_process_group(backend='nccl' if torch.cuda.is_available() else 'gloo')
+
+if dist.is_initialized():
+    print("DDP initialized")
+    print("  rank:", dist.get_rank())
+    print("  world size:", dist.get_world_size())
+else:
+    print("DDP not initialized")
+
+
 from datasets import load_from_disk
 from transformers import (
     GPT2Config, GPT2LMHeadModel,
@@ -36,27 +53,32 @@ class BackslashCallback(TrainerCallback):
         return control
 
 
+training_kwargs = dict(
+    output_dir="ckpts/tiny-gpt",
+    per_device_train_batch_size=8,
+    per_device_eval_batch_size=8,
+    gradient_accumulation_steps=2,   # effective batch 16
+    learning_rate=3e-4,
+    warmup_ratio=0.03,
+    weight_decay=0.1,
+    logging_steps=50,
+    eval_steps=200,
+    save_steps=200,
+    save_total_limit=2,
+    #fp16=True,                       # set False if CPU
+    #bf16=False,                      # True if your GPU supports bfloat16
+    #report_to="none",
+)
+
+
 # Train phase one: Yes backslash
 # 3 epochs
 if DO_BACKSLASH:
     print("Training phase one: Yes backslash")
 
     args = TrainingArguments(
-        output_dir="ckpts/tiny-gpt",
-        per_device_train_batch_size=8,
-        per_device_eval_batch_size=8,
-        gradient_accumulation_steps=2,   # effective batch 16
         num_train_epochs=3,
-        learning_rate=3e-4,
-        warmup_ratio=0.03,
-        weight_decay=0.1,
-        logging_steps=50,
-        eval_steps=200,
-        save_steps=200,
-        save_total_limit=2,
-        fp16=True,                       # set False if CPU
-        bf16=False,                      # True if your GPU supports bfloat16
-        report_to="none",
+        **training_kwargs
     )
 
     trainer = Trainer(
@@ -77,21 +99,8 @@ if DO_BACKSLASH:
 print("Training phase two: No backslash")
 
 args = TrainingArguments(
-    output_dir="ckpts/tiny-gpt",
-    per_device_train_batch_size=8,
-    per_device_eval_batch_size=8,
-    gradient_accumulation_steps=2,   # effective batch 16
     num_train_epochs=8,
-    learning_rate=3e-4,
-    warmup_ratio=0.03,
-    weight_decay=0.1,
-    logging_steps=50,
-    eval_steps=200,
-    save_steps=200,
-    save_total_limit=2,
-    fp16=True,                       # set False if CPU
-    bf16=False,                      # True if your GPU supports bfloat16
-    report_to="none"
+    **training_kwargs
 )
 
 trainer = Trainer(
