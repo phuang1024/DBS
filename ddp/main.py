@@ -114,13 +114,124 @@ def int8(state, bucket):
     return fut.then(callback)
 
 
+def gather_sanity_check(state, bucket):
+    """
+    Use all-gather, and then manually sum.
+    """
+    tensor = bucket.buffer()
+    world_size = dist.get_world_size()
+    gather_list = [torch.zeros_like(tensor) for _ in range(world_size)]
+
+    # Run all_gather asynchronously
+    fut = dist.all_gather(gather_list, tensor, async_op=True).get_future()
+
+    def after_gather(fut):
+        gathered = fut.value()  # list of tensors from all ranks
+        reduced = torch.stack(gathered).sum(dim=0)
+        return reduced
+
+    state.calls += 1
+    state.params += tensor.numel() * world_size
+    state.bytes += tensor.numel() * tensor.element_size() * world_size
+
+    return fut.then(after_gather)
+
+
+def gather_object_sanity_check(state, bucket):
+    """
+    Use all_gather_object, and then manually sum.
+    """
+    tensor = bucket.buffer()
+    world_size = dist.get_world_size()
+    gather_list = [None for _ in range(world_size)]
+
+    # TODO: This is using all_gather_object. Very inefficient.
+    # Required for variable-length data
+    dist.all_gather_object(gather_list, tensor)
+
+    result = torch.stack(gather_list).sum(dim=0)
+
+    fut = torch.futures.Future()
+    fut.set_result(result)
+    return fut
+
+
+class ExpGolombCode:
+    def __init__(self, k=0):
+        self.k = k
+
+    def encode(self, nums):
+        codes = [None] * len(nums)
+        for i, num in enumerate(nums):
+            code = num + (1 << self.k)
+            codes[i] = "0" * (int(code).bit_length() - self.k - 1) + bin(code)[2:]
+        return codes
+
+    def decode(self, codes):
+        nums = torch.zeros(len(codes), dtype=torch.long)
+        for i, code in enumerate(codes):
+            num = int("0b" + code, base=2)
+            nums[i] = num - (1 << self.k)
+        return nums
+
+    def streamEncode(self, nums):
+        codes = self.encode(nums)
+        return "".join(codes)
+
+    def streamDecode(self, streamStr):
+        codes = []
+        start = 0
+        while start < len(streamStr):
+            cnt = 0
+            while streamStr[start + cnt] == "0":
+                cnt += 1
+            end = start + 2 * cnt + self.k + 1
+            codes.append(streamStr[start:end])
+            start = end
+        nums = self.decode(codes)
+        return nums
+
+EGCode = ExpGolombCode(k=0)
+quant_fac = 10000
+
+
+def eg_coding(state, bucket):
+    """
+    Use EG codes during comm.
+    """
+    # Encode tensor with EG.
+    state.calls += 1
+    grad = bucket.buffer()
+    state.params += grad.numel()
+    grad = (grad * quant_fac).long()
+
+    sign = torch.sign(grad)
+    grad = torch.abs(grad)
+    grad_eg = (EGCode.encode(grad.tolist()), sign)
+    state.bytes += sum(len(code) for code in grad_eg[0]) // 8 + 1
+
+    # All gather.
+    world_size = dist.get_world_size()
+    gather_list = [None for _ in range(world_size)]
+    dist.all_gather_object(gather_list, grad_eg)
+
+    # Decode result.
+    grad_list = [EGCode.decode(codes) * sign for codes, sign in gather_list]
+    grad_list = [g.float() / quant_fac for g in grad_list]
+    reduced = torch.stack(grad_list).sum(dim=0)
+
+    fut = torch.futures.Future()
+    fut.set_result(reduced)
+    return fut
+
+
 def train(rank, world_size):
     dist.init_process_group("gloo", rank=rank, world_size=world_size)
 
     model = TestModel()
     ddp_model = DDP(model)
     hook_state = HookState()
-    ddp_model.register_comm_hook(state=hook_state, hook=int8)
+    ddp_model.register_comm_hook(state=hook_state, hook=vanilla)
 
     criterion = nn.CrossEntropyLoss()
     optim = torch.optim.Adam(ddp_model.parameters(), lr=1e-3)
@@ -136,7 +247,7 @@ def train(rank, world_size):
         loss.backward()
         optim.step()
 
-        if rank == 0 and step % 20 == 0:
+        if rank == 0 and step % 20 == 0 or True:
             print(f"rank={rank}, step={step}, loss={loss.item()}, batch_size={x.size(0)}")
 
     elapse = time.time() - time_start
