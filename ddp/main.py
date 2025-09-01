@@ -7,6 +7,13 @@ import torch.multiprocessing as mp
 import torch.nn as nn
 import torchvision
 from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.cpp_extension import load
+
+cpp = load(
+    name="cpp",
+    sources=["../eg/cpp.cpp"],
+    verbose=True,
+)
 
 torch.manual_seed(0)
 
@@ -225,13 +232,43 @@ def eg_coding(state, bucket):
     return fut
 
 
+def eg_coding_cpp(state, bucket):
+    """
+    Use C++ implementation of EG coding.
+    """
+    # Encode tensor with EG.
+    state.calls += 1
+    grad = bucket.buffer()
+    state.params += grad.numel()
+    grad = (grad * quant_fac).long()
+
+    sign = torch.sign(grad)
+    grad = torch.abs(grad).to(torch.uint32)
+    grad_eg = (cpp.encode(grad), sign)
+    state.bytes += grad_eg[0].numel()
+
+    # All gather.
+    world_size = dist.get_world_size()
+    gather_list = [None for _ in range(world_size)]
+    dist.all_gather_object(gather_list, grad_eg)
+
+    # Decode result.
+    grad_list = [cpp.decode(codes).long() * sign for codes, sign in gather_list]
+    grad_list = [g.float() / quant_fac for g in grad_list]
+    reduced = torch.stack(grad_list).sum(dim=0)
+
+    fut = torch.futures.Future()
+    fut.set_result(reduced)
+    return fut
+
+
 def train(rank, world_size):
     dist.init_process_group("gloo", rank=rank, world_size=world_size)
 
     model = TestModel()
     ddp_model = DDP(model)
     hook_state = HookState()
-    ddp_model.register_comm_hook(state=hook_state, hook=vanilla)
+    ddp_model.register_comm_hook(state=hook_state, hook=eg_coding_cpp)
 
     criterion = nn.CrossEntropyLoss()
     optim = torch.optim.Adam(ddp_model.parameters(), lr=1e-3)
