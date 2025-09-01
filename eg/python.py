@@ -40,8 +40,8 @@ EGCode = ExpGolombCode(k=0)
 
 
 def encode(nums):
-    return EGCode.streamEncode(nums)
+    return EGCode.streamEncode(nums.tolist())
 
 
 def decode(data):
-    return EGCode.streamDecode(data)
+    return EGCode.streamDecode(data).to(torch.uint32)
