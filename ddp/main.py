@@ -53,6 +53,8 @@ class HookState:
         self.params = 0
         # Total number of bytes transferred.
         self.bytes = 0
+        # List of values, used for plotting.
+        self.values = []
 
 
 def noop(state, bucket):
@@ -84,6 +86,14 @@ def vanilla(state, bucket):
     state.bytes += data.numel() * data.element_size()
 
     return fut.then(callback)
+
+
+def record_params(state, bucket):
+    """
+    Same as vanilla, but keeps a list of params.
+    """
+    state.values.append(bucket.buffer().cpu().clone())
+    return vanilla(state, bucket)
 
 
 def fp16(state, bucket):
@@ -268,7 +278,7 @@ def train(rank, world_size):
     model = TestModel()
     ddp_model = DDP(model)
     hook_state = HookState()
-    ddp_model.register_comm_hook(state=hook_state, hook=eg_coding_cpp)
+    ddp_model.register_comm_hook(state=hook_state, hook=record_params)
 
     criterion = nn.CrossEntropyLoss()
     optim = torch.optim.Adam(ddp_model.parameters(), lr=1e-3)
@@ -296,6 +306,11 @@ def train(rank, world_size):
         print(f"  calls: {hook_state.calls}")
         print(f"  params transferred: {hook_state.params}")
         print(f"  bytes transferred: {hook_state.bytes}")
+
+    # Save params to params.pt
+    #if rank == 0:
+    #    params = torch.cat(hook_state.values)
+    #    torch.save(params, f"params.pt")
 
 
 def main():
