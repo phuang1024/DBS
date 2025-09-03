@@ -4,11 +4,11 @@ Exposes Python bindings.
 
 Functions:
 encode(x) -> y:
-    x: 1D uint32 tensor.
+    x: 1D int32 tensor.
     y: 1D uint8 tensor.
 decode(y) -> x:
     y: 1D uint8 tensor.
-    x: 1D uint32 tensor.
+    x: 1D int32 tensor.
 """
 
 import torch

@@ -1,8 +1,12 @@
+"""
+Show stats of distribution of gradients.
+"""
+
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-data = torch.load("params.pt")
+data = torch.load("../dbs/gradients.pt")
 
 plt.hist(data.numpy(), bins=100, alpha=0.5, color='orange', range=(-0.007, 0.007))
 plt.title("Parameter Distribution")
@@ -48,3 +52,7 @@ if current_length > 0:
     lengths.append(current_length)
 
 print(f"Average zero run length: {np.mean(lengths):.2f}")
+
+# Print stats
+print(f"Mean: {data.mean().item():.6f}")
+print(f"Std: {data.std().item():.6f}")

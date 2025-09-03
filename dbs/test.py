@@ -8,35 +8,73 @@ import torch
 
 from eg_coding import encode, decode
 
-LENGTH = 100000
-MAX_VALUE = 1000
 ITERS = 100
 
-numbers = torch.randint(0, MAX_VALUE, (LENGTH,), dtype=torch.uint32)
 
-# Warmup
-for _ in range(10):
-    y = encode(numbers)
-    x = decode(y)
+def test_eg(numbers, iters=ITERS):
+    # Warmup
+    for _ in range(10):
+        y = encode(numbers)
+        x = decode(y)
 
-# Test
-time_start = time.time()
-correct = True
-for _ in range(ITERS):
-    y = encode(numbers)
-    x = decode(y)
-    if not torch.equal(x, numbers):
-        correct = False
-elapse = time.time() - time_start
+    # Test
+    time_start = time.time()
+    for i in range(iters):
+        y = encode(numbers)
+        x = decode(y)
 
-time_per_iter = elapse / ITERS
-time_per_num = time_per_iter / LENGTH
-print("Exponential Golomb coding performance test")
-print(f"  Length: {LENGTH}")
-print(f"  Max value: {MAX_VALUE}")
-print(f"  Iterations: {ITERS}")
-print("Test results")
-print(f"  Accurate encoding and decoding: {correct}")
-print(f"  Time elapsed: {elapse:.2f} seconds")
-print(f"  Time per iter: {time_per_iter * 1e3:.1f} ms")
-print(f"  Time per number: {time_per_num * 1e9:.1f} ns")
+        if i == 0:
+            correct = torch.equal(x, numbers)
+            compressed_size = y.numel() * y.element_size()
+
+    elapse = time.time() - time_start
+
+    length = numbers.numel()
+    data_size = numbers.numel() * numbers.element_size()
+    time_per_iter = elapse / iters
+    time_per_num = time_per_iter / length
+    print("Exponential Golomb coding performance test")
+    print(f"  Length: {length}")
+    print(f"  Iterations: {iters}")
+    print(f"  Original size: {data_size} bytes")
+    print("Test results")
+    print(f"  Accurate encoding and decoding: {correct}")
+    print(f"  Compressed size: {compressed_size} bytes")
+    print(f"  Compression ratio: {data_size / compressed_size:.2f}x")
+    print(f"  Time elapsed: {elapse:.2f} seconds")
+    print(f"  Time per iter: {time_per_iter * 1e3:.1f} ms")
+    print(f"  Time per number: {time_per_num * 1e9:.1f} ns")
+    print()
+
+
+LENGTH = 100000
+MAX_VALUE = 1000
+def test_uniform(length=LENGTH):
+    print("Testing uniform distribution")
+    print(f"  Length: {length}")
+    print(f"  Max value: {MAX_VALUE}")
+    numbers = torch.randint(-MAX_VALUE, MAX_VALUE, (LENGTH,), dtype=torch.int32)
+    test_eg(numbers)
+
+
+def test_gradient_dist(length=LENGTH):
+    print("Testing distribution of gradients during training")
+    print(f"  Loading from gradients.pt")
+    print(f"  Length (truncated): {length}")
+
+    data = torch.load("gradients.pt")
+    data = data[:length]
+
+    # Quantize
+    data = (data * 1000).to(torch.int32)
+
+    test_eg(data)
+
+
+def main():
+    test_uniform()
+    test_gradient_dist()
+
+
+if __name__ == "__main__":
+    main()

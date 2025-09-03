@@ -1,5 +1,18 @@
 /**
  * Implementation of Exponential Golomb coding.
+ *
+ * Negative number support:
+ * If x > 0, encode 2*x - 1
+ * Else, encode -2*x
+ * If decoding an odd number, return (value + 1) / 2
+ * Else, return -(value / 2)
+ *
+ * Run length coding:
+ * Only zeros are run-length encoded.
+ * After every zero value, the run length of zeros is encoded using identical EG coding.
+ *   Including the zero that was encoded.
+ *   E.g. a run of 5 zeros is encoded as: 0, 5
+ * When decoding, if a zero is decoded, the next value is decoded as the run length of zeros.
  */
 
 #include <cstdint>
@@ -23,6 +36,7 @@ public:
 
     /**
      * Write the N least significant bits of a value to the stream.
+     * The MSB of `value` is written first.
      * @param value The value to write.
      * @param bits The number N of bits to write.
      */
@@ -74,7 +88,11 @@ public:
     BitStreamReader(const uint8_t* buf, size_t size):
         buffer(buf), buffer_size(size), byte_pos(0), bit_pos(0) {}
 
-    // return: Whether read was successful
+    /**
+     * Read N bits from the stream into r_value.
+     * The MSB of r_value is filled first.
+     * @return Whether read was successful
+     */
     bool read(int bits, uint32_t& r_value) {
         r_value = 0;
         for (int i = 0; i < bits; ++i) {
@@ -123,15 +141,31 @@ bool decode_value(BitStreamReader& reader, uint32_t& r_value) {
 
 
 /**
- * data: uint32 tensor of shape (N,) containing the values to encode
- * return: uint8 tensor of shape (M,) containing the encoded bitstream
+ * Encode a list of values, using negative number support and run length coding.
+ * @param data int32 tensor of shape (N,) containing the values to encode
+ * @return uint8 tensor of shape (M,) containing the encoded bitstream
  */
 torch::Tensor encode(torch::Tensor data) {
     BitStreamWriter writer;
 
-    auto accessor = data.accessor<uint32_t, 1>();
-    for (int i = 0; i < data.size(0); ++i) {
-        encode_value(accessor[i], writer);
+    auto accessor = data.accessor<int32_t, 1>();
+    int i = 0;
+    while (i < data.size(0)) {
+        int32_t value = accessor[i];
+        uint32_t pos_value = (value > 0) ? (2 * value - 1) : (-2 * value);
+        encode_value(pos_value, writer);
+
+        if (value == 0) {
+            // Count run length of zeros
+            int run_length = 1;
+            while (i + run_length < data.size(0) && accessor[i + run_length] == 0) {
+                run_length++;
+            }
+            encode_value(run_length, writer);
+            i += run_length;
+        } else {
+            i++;
+        }
     }
     writer.finish();
 
@@ -141,24 +175,37 @@ torch::Tensor encode(torch::Tensor data) {
 }
 
 
-
 /**
- * data: uint8 tensor of shape (N,) containing the bitstream
- * return: uint32 tensor of shape (M,) containing the decoded values
+ * Decode a bitstream into a list of values, using negative number support and run length coding.
+ * @param data uint8 tensor of shape (N,) containing the bitstream
+ * @return uint32 tensor of shape (M,) containing the decoded values
  */
 torch::Tensor decode(torch::Tensor data) {
     BitStreamReader reader(data.data_ptr<uint8_t>(), data.numel());
 
     std::vector<uint32_t> values;
     while (true) {
-        uint32_t value;
-        if (!decode_value(reader, value)) {
+        uint32_t pos_value;
+        if (!decode_value(reader, pos_value)) {
             break;
         }
-        values.push_back(value);
+
+        int32_t value = (pos_value & 1) ? ((pos_value + 1) / 2) : (-(pos_value / 2));
+        if (value == 0) {
+            // Decode run length of zeros
+            uint32_t run_length;
+            if (!decode_value(reader, run_length)) {
+                break;
+            }
+            for (uint32_t i = 0; i < run_length; ++i) {
+                values.push_back(0);
+            }
+        } else {
+            values.push_back(value);
+        }
     }
 
-    auto options = torch::TensorOptions().dtype(torch::kUInt32);
+    auto options = torch::TensorOptions().dtype(torch::kInt32);
     return torch::from_blob(values.data(), {(int64_t)values.size()}, options).clone();
 }
 

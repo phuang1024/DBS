@@ -307,7 +307,7 @@ def train(rank, world_size):
         print(f"  params transferred: {hook_state.params}")
         print(f"  bytes transferred: {hook_state.bytes}")
 
-    # Save params to params.pt
+    # Save gradients to params.pt
     #if rank == 0:
     #    params = torch.cat(hook_state.values)
     #    torch.save(params, f"params.pt")
