@@ -53,6 +53,7 @@ def test_uniform(length=LENGTH):
     print("Testing uniform distribution")
     print(f"  Length: {length}")
     print(f"  Max value: {MAX_VALUE}")
+    torch.manual_seed(0)
     numbers = torch.randint(-MAX_VALUE, MAX_VALUE, (LENGTH,), dtype=torch.int32)
     test_eg(numbers)
 
