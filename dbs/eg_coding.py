@@ -5,9 +5,9 @@ Exposes Python bindings.
 Functions:
 encode(x) -> y:
     x: 1D int32 tensor.
-    y: 1D uint32 tensor.
+    y: 1D uint8 tensor.
 decode(y) -> x:
-    y: 1D uint32 tensor.
+    y: 1D uint8 tensor.
     x: 1D int32 tensor.
 """
 
@@ -22,3 +22,6 @@ _eg_coding = load(
 
 encode = _eg_coding.encode
 decode = _eg_coding.decode
+
+# Warm up
+encode(torch.randint(-1000, 1000, (10,), dtype=torch.int32))

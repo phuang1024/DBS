@@ -27,8 +27,8 @@
  */
 class BitStreamWriter {
 public:
-    std::vector<uint32_t> buffer;
-    uint32_t curr_byte;
+    std::vector<uint8_t> buffer;
+    uint8_t curr_byte;
     int bit_pos;
 
     BitStreamWriter():
@@ -42,7 +42,7 @@ public:
      */
     void write(uint32_t value, int bits) {
         for (int i = 0; i < bits; ++i) {
-            if (bit_pos == 32) {
+            if (bit_pos == 8) {
                 buffer.push_back(curr_byte);
                 curr_byte = 0;
                 bit_pos = 0;
@@ -80,12 +80,12 @@ void encode_value(uint32_t value, BitStreamWriter& writer) {
  */
 class BitStreamReader {
 public:
-    const uint32_t* buffer;
+    const uint8_t* buffer;
     size_t buffer_size;
     size_t byte_pos;
     int bit_pos;
 
-    BitStreamReader(const uint32_t* buf, size_t size):
+    BitStreamReader(const uint8_t* buf, size_t size):
         buffer(buf), buffer_size(size), byte_pos(0), bit_pos(0) {}
 
     /**
@@ -101,7 +101,7 @@ public:
             }
             r_value |= ((buffer[byte_pos] >> bit_pos) & 1) << (bits - i - 1);
             bit_pos++;
-            if (bit_pos == 32) {
+            if (bit_pos == 8) {
                 bit_pos = 0;
                 byte_pos++;
             }
@@ -169,7 +169,7 @@ torch::Tensor encode(torch::Tensor data) {
     }
     writer.finish();
 
-    auto options = torch::TensorOptions().dtype(torch::kUInt32);
+    auto options = torch::TensorOptions().dtype(torch::kUInt8);
     torch::Tensor result = torch::from_blob(writer.buffer.data(), {(int64_t)writer.buffer.size()}, options).clone();
     return result;
 }
@@ -181,7 +181,7 @@ torch::Tensor encode(torch::Tensor data) {
  * @return uint32 tensor of shape (M,) containing the decoded values
  */
 torch::Tensor decode(torch::Tensor data) {
-    BitStreamReader reader(data.data_ptr<uint32_t>(), data.numel());
+    BitStreamReader reader(data.data_ptr<uint8_t>(), data.numel());
 
     std::vector<uint32_t> values;
     while (true) {

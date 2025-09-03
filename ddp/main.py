@@ -15,10 +15,13 @@ cpp = load(
     verbose=True,
 )
 
+# Warm up
+cpp.encode(torch.randint(0, 1000, (10,), dtype=torch.uint32))
+
 torch.manual_seed(0)
 
 mnist = torchvision.datasets.MNIST(
-    root="./data",
+    root="../data",
     train=True,
     download=True,
     transform=torchvision.transforms.ToTensor(),
@@ -278,7 +281,7 @@ def train(rank, world_size):
     model = TestModel()
     ddp_model = DDP(model)
     hook_state = HookState()
-    ddp_model.register_comm_hook(state=hook_state, hook=record_params)
+    ddp_model.register_comm_hook(state=hook_state, hook=eg_coding_cpp)
 
     criterion = nn.CrossEntropyLoss()
     optim = torch.optim.Adam(ddp_model.parameters(), lr=1e-3)
