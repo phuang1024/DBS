@@ -12,7 +12,13 @@ import torch.nn as nn
 import torchvision
 from torch.nn.parallel import DistributedDataParallel as DDP
 
-from ddp_hook import ddp_eg_coding, EGHookState
+from ddp_hook import ddp_eg_coding, EGHookState, _vanilla
+
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+WORLD_SIZE = 2
+BATCH_SIZE = 32
+STEPS = 1000
 
 torch.manual_seed(0)
 
@@ -24,7 +30,7 @@ mnist = torchvision.datasets.MNIST(
 )
 train_loader = torch.utils.data.DataLoader(
     mnist,
-    batch_size=32,
+    batch_size=BATCH_SIZE,
     shuffle=True,
 )
 
@@ -47,7 +53,8 @@ class TestModel(nn.Module):
 def train(rank, world_size):
     dist.init_process_group("gloo", rank=rank, world_size=world_size)
 
-    model = TestModel()
+    model = TestModel().to(DEVICE)
+    model.train()
 
     ddp_model = DDP(model)
     hook_state = EGHookState()
@@ -58,8 +65,9 @@ def train(rank, world_size):
 
     data_iter = iter(train_loader)
     time_start = time.time()
-    for step in range(100):
+    for step in range(STEPS):
         x, y = next(data_iter)
+        x, y = x.to(DEVICE), y.to(DEVICE)
 
         optim.zero_grad()
         outputs = ddp_model(x)
@@ -67,7 +75,7 @@ def train(rank, world_size):
         loss.backward()
         optim.step()
 
-        if rank == 0 and (step % 20 == 0 or step == 99):
+        if rank == 0 and (step % (STEPS // 10) == 0 or step == STEPS - 1):
             print(f"rank={rank}, step={step}, loss={loss.item()}, batch_size={x.size(0)}")
 
     elapse = time.time() - time_start
@@ -82,17 +90,18 @@ def train(rank, world_size):
 
 
 def main():
+    print("Using device", DEVICE)
+
     model = TestModel()
     num_params = sum(p.numel() for p in model.parameters())
     print(model)
     print(f"Number of parameters: {num_params}")
 
     print("Begin DDP training")
-    world_size = 2
     mp.spawn(
         train,
-        args=(world_size,),
-        nprocs=world_size,
+        args=(WORLD_SIZE,),
+        nprocs=WORLD_SIZE,
         join=True,
     )
 

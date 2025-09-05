@@ -29,6 +29,8 @@ def ddp_eg_coding(state: None | EGHookState, bucket):
     """
     # Encode tensor with EG.
     grad = bucket.buffer()
+    orig_device = grad.device
+    grad = grad.cpu()
     grad = (grad * QUANT_FAC).int()
     grad_eg = encode(grad)
 
@@ -46,7 +48,23 @@ def ddp_eg_coding(state: None | EGHookState, bucket):
     # Decode result.
     grad_list = [decode(data).long() for data in gather_list]
     grad = torch.stack(grad_list).sum(dim=0).float() / QUANT_FAC
+    grad = grad.to(orig_device)
 
     fut = torch.futures.Future()
     fut.set_result(grad)
+    return fut
+
+
+def _vanilla(state: EGHookState, bucket):
+    """
+    Vanilla DDP hook. Records stats.
+    """
+    data = bucket.buffer()
+    fut = torch.futures.Future()
+    fut.set_result(bucket.buffer())
+
+    state.calls += 1
+    state.params += data.numel()
+    state.bytes += data.numel() * data.element_size()
+
     return fut
