@@ -60,11 +60,14 @@ def _noop(state: EGHookState, bucket):
     No-op DDP hook. Used to records stats.
     """
     data = bucket.buffer()
-    fut = torch.futures.Future()
-    fut.set_result(bucket.buffer())
+    if state is not None:
+        state.calls += 1
+        state.params += data.numel()
+        state.bytes += data.numel() * data.element_size()
 
-    state.calls += 1
-    state.params += data.numel()
-    state.bytes += data.numel() * data.element_size()
+    dist.all_reduce(data)
+
+    fut = torch.futures.Future()
+    fut.set_result(data)
 
     return fut
