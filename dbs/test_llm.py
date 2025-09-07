@@ -15,26 +15,11 @@ from transformers import (
 from datasets import load_dataset
 
 from ddp_hook import ddp_eg_coding, EGHookState, _noop
+from test_llm_models import load_model
 
 WORLD_SIZE = 2
 
 
-# Load dataset.
-dataset = load_dataset("glue", "sst2")
-tokenizer = BertTokenizerFast.from_pretrained("bert-base-uncased")
-
-def tokenize(batch):
-    return tokenizer(batch["sentence"], padding="max_length", truncation=True, max_length=64)
-
-dataset = dataset.map(tokenize, batched=True)
-dataset = dataset.rename_column("label", "labels")
-dataset.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
-
-train_dataset = dataset["train"].shuffle(seed=42).select(range(2000))   # tiny subset
-eval_dataset = dataset["validation"].shuffle(seed=42).select(range(500))
-
-
-# Trainer wrapper.
 hook_state = EGHookState()
 
 class EGTrainer(Trainer):
@@ -44,7 +29,7 @@ class EGTrainer(Trainer):
         # Register DDP hook
         if not isinstance(model, DDP):
             model = DDP(model)
-        model.register_comm_hook(state=hook_state, hook=_noop)
+        model.register_comm_hook(state=hook_state, hook=ddp_eg_coding)
 
         return model
 
@@ -57,8 +42,7 @@ def train(rank):
 
     dist.init_process_group("gloo", rank=rank, world_size=WORLD_SIZE)
 
-    print("Creating model.")
-    model = BertForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=2)
+    model, train_dataset, eval_dataset = load_model("bert")
     print(f"Model parameters: {sum(p.numel() for p in model.parameters())}")
 
     print("Training.")
@@ -92,6 +76,7 @@ def train(rank):
         print(f"DDP Hook calls: {state.calls}")
         print(f"Total params transferred: {state.params}")
         print(f"Total bytes transferred: {state.bytes}")
+        print(f"Profiling: {state.profiling[:7]}")
 
     print("Evaluating")
     eval_results = trainer.evaluate()
