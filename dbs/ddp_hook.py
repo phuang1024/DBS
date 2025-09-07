@@ -7,7 +7,7 @@ import torch.distributed as dist
 
 from eg_coding import encode, decode
 
-QUANT_FAC = 500
+QUANT_FAC = 1000
 
 
 class EGHookState:
@@ -55,9 +55,9 @@ def ddp_eg_coding(state: None | EGHookState, bucket):
     return fut
 
 
-def _vanilla(state: EGHookState, bucket):
+def _noop(state: EGHookState, bucket):
     """
-    Vanilla DDP hook. Records stats.
+    No-op DDP hook. Used to records stats.
     """
     data = bucket.buffer()
     fut = torch.futures.Future()

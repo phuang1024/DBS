@@ -1,12 +1,11 @@
-"""
-Run single process:
-python test_llm.py
-Run DDP multi process:
-torchrun --nproc_per_node=2 test_llm.py
-"""
+import os
+import time
 
 import torch
 import torch.distributed as dist
+import torch.multiprocessing as mp
+from torch.nn.parallel import DistributedDataParallel as DDP
+
 from transformers import (
     BertForSequenceClassification,
     BertTokenizerFast,
@@ -15,11 +14,12 @@ from transformers import (
 )
 from datasets import load_dataset
 
-from ddp_hook import ddp_eg_coding, EGHookState, _vanilla
+from ddp_hook import ddp_eg_coding, EGHookState, _noop
 
-dist.init_process_group("gloo")
+WORLD_SIZE = 2
 
-# 1. Load a small dataset (SST2 subset)
+
+# Load dataset.
 dataset = load_dataset("glue", "sst2")
 tokenizer = BertTokenizerFast.from_pretrained("bert-base-uncased")
 
@@ -33,45 +33,84 @@ dataset.set_format(type="torch", columns=["input_ids", "attention_mask", "labels
 train_dataset = dataset["train"].shuffle(seed=42).select(range(2000))   # tiny subset
 eval_dataset = dataset["validation"].shuffle(seed=42).select(range(500))
 
-# 2. Model
-model = BertForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=2)
 
-# 3. Training arguments
-training_args = TrainingArguments(
-    output_dir="./bert_out",
-    eval_strategy="epoch",
-    save_strategy="no",
-    per_device_train_batch_size=16,
-    per_device_eval_batch_size=16,
-    num_train_epochs=1,
-    logging_steps=50,
-    fp16=False,
-    report_to="none",   # disable wandb/mlflow/etc.
-)
-
-# 4. Trainer
+# Trainer wrapper.
 hook_state = EGHookState()
 
 class EGTrainer(Trainer):
     def _wrap_model(self, model, *args, **kwargs):
         model = super()._wrap_model(model, *args, **kwargs)
-        if isinstance(model, torch.nn.parallel.DistributedDataParallel):
-            # Register DDP hook
-            model.register_comm_hook(state=hook_state, hook=_vanilla)
+
+        # Register DDP hook
+        if not isinstance(model, DDP):
+            model = DDP(model)
+        model.register_comm_hook(state=hook_state, hook=ddp_eg_coding)
+
         return model
 
-trainer = EGTrainer(
-    model=model,
-    args=training_args,
-    train_dataset=train_dataset,
-    eval_dataset=eval_dataset,
-)
 
-# 5. Train
-trainer.train()
+def train(rank):
+    # Set rank to "0" because I only have one GPU.
+    os.environ["RANK"] = "0"
+    os.environ["LOCAL_RANK"] = "0"
+    os.environ["WORLD_SIZE"] = str(WORLD_SIZE)
 
-# 6. Print hook results
-if dist.is_initialized() and dist.get_rank() == 0:
-    print(f"DDP Hook calls: {hook_state.calls}")
-    print(f"Total params transferred: {hook_state.params}")
-    print(f"Total bytes transferred: {hook_state.bytes}")
+    dist.init_process_group("gloo", rank=rank, world_size=WORLD_SIZE)
+
+    print("Creating model.")
+    model = BertForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=2)
+    print(f"Model parameters: {sum(p.numel() for p in model.parameters())}")
+
+    print("Training.")
+    training_args = TrainingArguments(
+        output_dir="./bert_out",
+        eval_strategy="epoch",
+        save_strategy="no",
+        per_device_train_batch_size=16,
+        per_device_eval_batch_size=16,
+        num_train_epochs=1,
+        logging_steps=50,
+        fp16=False,
+        report_to="none",
+        ddp_backend="gloo",
+    )
+    trainer = EGTrainer(
+        model=model,
+        args=training_args,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+    )
+
+    time_start = time.time()
+    trainer.train()
+    elapse = time.time() - time_start
+    if rank == 0:
+        print(f"Training time: {elapse:.2f} seconds")
+
+    if rank == 0:
+        state = hook_state
+        print(f"DDP Hook calls: {state.calls}")
+        print(f"Total params transferred: {state.params}")
+        print(f"Total bytes transferred: {state.bytes}")
+
+    print("Evaluating")
+    eval_results = trainer.evaluate()
+    if rank == 0:
+        print(f"Eval results: {eval_results}")
+
+    print(f"Rank {rank} finished.")
+
+
+def main():
+    mp.spawn(
+        train,
+        args=(),
+        nprocs=WORLD_SIZE,
+        join=True,
+    )
+
+
+if __name__ == "__main__":
+    os.environ["MASTER_ADDR"] = "localhost"
+    os.environ["MASTER_PORT"] = "29500"
+    main()
