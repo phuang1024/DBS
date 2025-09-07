@@ -42,7 +42,7 @@ def train(rank):
 
     dist.init_process_group("gloo", rank=rank, world_size=WORLD_SIZE)
 
-    model, train_dataset, eval_dataset = load_model("bert")
+    model, train_dataset, eval_dataset = load_model("gpt2")
     print(f"Model parameters: {sum(p.numel() for p in model.parameters())}")
 
     print("Training.")
@@ -76,7 +76,7 @@ def train(rank):
         print(f"DDP Hook calls: {state.calls}")
         print(f"Total params transferred: {state.params}")
         print(f"Total bytes transferred: {state.bytes}")
-        print(f"Profiling: {state.profiling[:7]}")
+        #print(f"Profiling: {state.profiling[:7]}")
 
     print("Evaluating")
     eval_results = trainer.evaluate()

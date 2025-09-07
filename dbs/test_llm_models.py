@@ -40,15 +40,16 @@ def load_gpt2():
     tokenizer.pad_token = tokenizer.eos_token  # GPT-2 has no pad token
 
     def tok(batch):
-        return tokenizer(batch["text"], padding="max_length",
-                         truncation=True, max_length=64)
+        tokens = tokenizer(batch["text"], padding="max_length", truncation=True, max_length=64)
+        tokens["labels"] = tokens["input_ids"].copy()
+        return tokens
 
     dataset = dataset.map(tok, batched=True)
-    dataset.set_format(type="torch", columns=["input_ids", "attention_mask"])
+    dataset.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
     train_dataset = dataset["train"].select(range(TRAIN_LEN))
     eval_dataset = dataset["validation"].select(range(EVAL_LEN))
 
-    model = GPT2LMHeadModel.from_pretrained("gpt2").cuda(rank)
+    model = GPT2LMHeadModel.from_pretrained("gpt2")
 
     return model, train_dataset, eval_dataset
 
@@ -56,5 +57,7 @@ def load_gpt2():
 def load_model(type):
     if type == "bert":
         return load_bert()
+    elif type == "gpt2":
+        return load_gpt2()
     else:
         raise ValueError(f"Unknown model type: {type}")
