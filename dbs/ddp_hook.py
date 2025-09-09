@@ -38,19 +38,23 @@ def ddp_eg_coding(state: None | EGHookState, bucket):
     state: Optional, EGHookState instance for recording stats.
     bucket: DDP gradient bucket.
     """
+    rank = dist.get_rank()
+    if rank == 0: print("ONE", flush=True)
     # Encode tensor with EG.
     grad = bucket.buffer()
+    print(grad.shape)
     orig_device = grad.device
     #t1 = time.time()
     grad = grad.cpu()
     #t2 = time.time()
-    grad = (grad * QUANT_FAC).int()
+    grad = (grad * QUANT_FAC).to(torch.int64)
     #t3 = time.time()
-    grad_eg = encode(grad)
+    grad_eg = encode(grad).view(torch.uint8)
     #t4 = time.time()
     #state.profiling[0] += t2 - t1
     #state.profiling[1] += t3 - t2
     #state.profiling[2] += t4 - t3
+    if rank == 0: print("TWO", flush=True)
 
     if state is not None:
         # Update stats.
@@ -65,18 +69,21 @@ def ddp_eg_coding(state: None | EGHookState, bucket):
     dist.all_gather_object(gather_list, grad_eg)
     #t2 = time.time()
     #state.profiling[3] += t2 - t1
+    if rank == 0: print("THREE", flush=True)
 
     # Decode result.
     #t1 = time.time()
-    grad_list = [decode(data).long() for data in gather_list]
+    grad_list = [decode(data.view(torch.uint64)) for data in gather_list]
     #t2 = time.time()
     grad = torch.stack(grad_list).sum(dim=0).float() / QUANT_FAC
     #t3 = time.time()
     grad = grad.to(orig_device)
+    print(grad.shape)
     #t4 = time.time()
     #state.profiling[4] += t2 - t1
     #state.profiling[5] += t3 - t2
     #state.profiling[6] += t4 - t3
+    if rank == 0: print("FOUR", flush=True)
 
     fut = torch.futures.Future()
     fut.set_result(grad)
