@@ -25,6 +25,7 @@
  * The first uint64 in the output stream is the number of bits the encoded stream contains.
  */
 
+#include <bit>
 #include <cstdint>
 #include <iostream>
 #include <vector>
@@ -60,7 +61,6 @@ public:
                 curr_byte = 0;
                 bit_pos = 0;
             }
-            std::cerr << "write bit pos " << bit_pos << std::endl;
             curr_byte |= ((value >> (bits - i - 1)) & 1) << bit_pos;
             bit_pos++;
         }
@@ -71,9 +71,9 @@ public:
      * Write remaining bits to the stream, padding with zeros if necessary.
      */
     void finish() {
-        std::cerr << "finish bit pos " << bit_pos << std::endl;
         if (bit_pos > 0) {
             buffer.push_back(curr_byte);
+            buffer[0] += bit_pos;
         }
     }
 };
@@ -84,7 +84,7 @@ public:
  */
 void encode_value(uint64_t value, BitStreamWriter& writer) {
     value += 1;
-    int num_bits = 64 - __builtin_clz(value);
+    int num_bits = 64 - std::countl_zero(value);
     writer.write(0, num_bits - 1);
     writer.write(value, num_bits);
 }
@@ -119,7 +119,6 @@ public:
         r_value = 0;
         for (int i = 0; i < bits; ++i) {
             if (byte_pos - 1 >= buffer_size && bit_pos >= last_byte_bits) {
-                std::cerr << "read1" << std::endl;
                 return false;
             }
             r_value |= ((buffer[byte_pos] >> bit_pos) & 1) << (bits - i - 1);
@@ -144,10 +143,9 @@ bool decode_value(BitStreamReader& reader, uint64_t& r_value) {
     uint64_t bit;
     while (true) {
         if (!reader.read(1, bit)) {
-            std::cerr << "decvalue1" << std::endl;
             return false;
         }
-        if (bit == 1) {
+        if (bit) {
             break;
         }
         num_bits++;
@@ -155,7 +153,6 @@ bool decode_value(BitStreamReader& reader, uint64_t& r_value) {
 
     // Read the value
     if (!reader.read(num_bits, r_value)) {
-        std::cerr << "decvalue2" << std::endl;
         return false;
     }
     // Add the leading 1 bit
@@ -212,7 +209,6 @@ torch::Tensor decode(torch::Tensor data) {
     while (true) {
         uint64_t pos_value;
         if (!decode_value(reader, pos_value)) {
-            std::cerr << "dec1" << std::endl;
             break;
         }
 
@@ -221,7 +217,6 @@ torch::Tensor decode(torch::Tensor data) {
             // Decode run length of zeros
             uint64_t run_length;
             if (!decode_value(reader, run_length)) {
-                std::cerr << "dec2" << std::endl;
                 break;
             }
             for (uint64_t i = 0; i < run_length; ++i) {
@@ -230,7 +225,6 @@ torch::Tensor decode(torch::Tensor data) {
         } else {
             values.push_back(value);
         }
-        std::cerr << "finished read " << value << std::endl;
     }
 
     auto options = torch::TensorOptions().dtype(torch::kInt64);
@@ -238,7 +232,76 @@ torch::Tensor decode(torch::Tensor data) {
 }
 
 
+// Tests
+
+void test_bitrw() {
+    std::cerr << "Test BitStreamWriter and BitStreamReader" << std::endl;
+
+    std::vector<int> data(64 * 20);
+    for (int i = 0; i < data.size(); i++) {
+        data[i] = (rand() % 2) == 0;
+    }
+
+    for (int mod = 0; mod < 64; mod++) {
+        int length = 64 * 19 + mod;
+        std::cerr << "Length " << length << std::endl;
+
+        BitStreamWriter writer;
+        for (int i = 0; i < length; i++) {
+            writer.write(data[i], 1);
+        }
+        writer.finish();
+
+        BitStreamReader reader(writer.buffer.data());
+        for (int i = 0; i < length; i++) {
+            uint64_t bit;
+            if (!reader.read(1, bit)) {
+                std::cerr << "Read failed at " << i << std::endl;
+                break;
+            }
+            if (bit != data[i]) {
+                std::cerr << "Bit mismatch at " << i << std::endl;
+                break;
+            }
+        }
+    }
+}
+
+
+void test_rw_value() {
+    std::cerr << "Test encode and decode values" << std::endl;
+
+    std::vector<uint64_t> data(1000);
+    const int MAX_VALUE = 10000;
+    for (int i = 0; i < data.size(); i++) {
+        data[i] = rand() % MAX_VALUE;
+    }
+
+    BitStreamWriter writer;
+    for (int i = 0; i < data.size(); i++) {
+        encode_value(data[i], writer);
+    }
+    writer.finish();
+
+    BitStreamReader reader(writer.buffer.data());
+    for (int i = 0; i < data.size(); i++) {
+        uint64_t value;
+        if (!decode_value(reader, value)) {
+            std::cerr << "Decode failed at " << i << std::endl;
+            break;
+        }
+        if (value != data[i]) {
+            std::cerr << "Value mismatch at " << i << ": " << value << " != " << data[i] << std::endl;
+            break;
+        }
+    }
+}
+
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("encode", &encode, "");
     m.def("decode", &decode, "");
+
+    m.def("test_bitrw", &test_bitrw, "");
+    m.def("test_rw_value", &test_rw_value, "");
 }
