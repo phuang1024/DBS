@@ -5,43 +5,53 @@ Show stats of distribution of gradients.
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from tqdm import tqdm
 
-data = torch.load("../dbs/gradients.pt")
+#data = torch.load("../dbs/gradients.pt").numpy()
+with open("../data/grads_bert.npy", "rb") as f:
+    data = np.frombuffer(f.read(), dtype=np.float32)
 
-plt.hist(data.numpy(), bins=100, alpha=0.5, color='orange', range=(-0.007, 0.007))
-plt.title("Parameter Distribution")
+print(f"Data shape: {data.shape}")
+
+max_x = 1e-3
+plt.hist(data, bins=100, alpha=0.5, color='blue', range=(-max_x, max_x * 1.01))
+#plt.title("Gradient Distribution")
+plt.ticklabel_format(axis='x', style='sci', scilimits=(0,0))
 plt.xlabel("Value")
 plt.ylabel("Frequency")
 plt.tight_layout()
-plt.show()
+#plt.show()
+plt.savefig("grad_dist.png")
 
 
 # Plot proportion of values where abs(v) < x
-x_values = np.linspace(0, 0.01, 30)
+x_values = np.linspace(0, max_x, 30)
 proportions = []
 
 for x in x_values:
-    proportion = (data.abs() < x).float().mean().item()
+    proportion = np.sum(np.abs(data) <= x) / data.size
     proportions.append(proportion)
 
+plt.clf()
 plt.plot(x_values, proportions, marker='o')
-plt.title("Proportion of Parameters with |value| < x")
+#plt.title("Proportion of Parameters with |value| <= x")
 plt.xlabel("x")
 plt.ylabel("Proportion")
 plt.grid()
 plt.tight_layout()
-plt.show()
+#plt.show()
+plt.savefig("proportion_below_x.png")
 
 
 # Print proportion of zeros
-proportion_zeros = (data == 0).float().mean().item()
+proportion_zeros = np.sum(data == 0) / data.size
 print(f"Proportion of zeros: {proportion_zeros:.4f}")
 
 
 # Print average zero run length
 lengths = []
 current_length = 0
-for v in data[:500000]:
+for v in tqdm(data):
     if v == 0:
         current_length += 1
     else:

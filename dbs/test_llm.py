@@ -42,7 +42,7 @@ def train(rank):
 
     dist.init_process_group("gloo", rank=rank, world_size=WORLD_SIZE)
 
-    model, train_dataset, eval_dataset = load_model("gpt2")
+    model, train_dataset, eval_dataset = load_model("bert")
     print(f"Model parameters: {sum(p.numel() for p in model.parameters())}")
 
     print("Training.")
@@ -72,10 +72,9 @@ def train(rank):
         print(f"Training time: {elapse:.2f} seconds")
 
     if rank == 0:
-        state = hook_state
-        print(f"DDP Hook calls: {state.calls}")
-        print(f"Total params transferred: {state.params}")
-        print(f"Total bytes transferred: {state.bytes}")
+        print(f"DDP Hook calls: {hook_state.calls}")
+        print(f"Total params transferred: {hook_state.params}")
+        print(f"Total bytes transferred: {hook_state.bytes}")
         #print(f"Profiling: {state.profiling[:7]}")
 
     print("Evaluating")
@@ -84,6 +83,7 @@ def train(rank):
         print(f"Eval results: {eval_results}")
 
     print(f"Rank {rank} finished.")
+    #torch.save(hook_state.grads, "grads.pt")
 
 
 def main():

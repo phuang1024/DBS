@@ -28,7 +28,9 @@ class EGHookState:
         # 4: decode
         # 5: dequantize
         # 6: to_device
-        self.profiling = [0] * 100
+        #self.profiling = [0] * 100
+
+        #self.grads = []
 
 
 def ddp_eg_coding(state: None | EGHookState, bucket):
@@ -40,6 +42,7 @@ def ddp_eg_coding(state: None | EGHookState, bucket):
     """
     # Encode tensor with EG.
     grad = bucket.buffer()
+    #state.grads.append(grad.tolist())
     orig_device = grad.device
     #t1 = time.time()
     grad = grad.cpu()
