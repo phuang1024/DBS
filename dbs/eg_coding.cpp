@@ -118,7 +118,7 @@ public:
     bool read(int bits, uint64_t& r_value) {
         r_value = 0;
         for (int i = 0; i < bits; ++i) {
-            if (byte_pos - 1 >= buffer_size && bit_pos >= last_byte_bits) {
+            if (byte_pos >= buffer_size && bit_pos >= last_byte_bits) {
                 return false;
             }
             r_value |= ((buffer[byte_pos] >> bit_pos) & 1) << (bits - i - 1);
