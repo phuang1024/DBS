@@ -5,6 +5,7 @@ Show stats of distribution of gradients.
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from scipy.stats import gennorm
 from tqdm import tqdm
 
 #data = torch.load("../dbs/gradients.pt").numpy()
@@ -14,7 +15,17 @@ with open("../data/grads_bert.npy", "rb") as f:
 print(f"Data shape: {data.shape}")
 
 max_x = 1e-3
-plt.hist(data, bins=100, alpha=0.5, color='blue', range=(-max_x, max_x * 1.01))
+
+# Calculate GG distribution
+gg_shape = 0.15
+gg_std = 5.824e-4
+x = np.linspace(-max_x, max_x, 100)
+pdf = gennorm.pdf(x, gg_shape, scale=gg_std)
+
+hist_bars, _, _ = plt.hist(data, bins=100, alpha=0.5, color='blue', range=(-max_x, max_x * 1.01))
+hist_bars = sorted(hist_bars, reverse=True)
+pdf = pdf / np.max(pdf) * hist_bars[1]  # Scale PDF to histogram
+plt.plot(x, pdf, 'r-', lw=2)
 #plt.title("Gradient Distribution")
 plt.ticklabel_format(axis='x', style='sci', scilimits=(0,0))
 plt.xlabel("Value")
@@ -22,6 +33,7 @@ plt.ylabel("Frequency")
 plt.tight_layout()
 #plt.show()
 plt.savefig("grad_dist.png")
+stop
 
 
 # Plot proportion of values where abs(v) < x
