@@ -2,6 +2,20 @@
 
 Distributed Backslash.
 
+## Testing instructions
+
+Around 4 hours per run.
+
+Tensorboard and other logs are saved to runs/*.
+
+```bash
+pip install -r requirements.txt
+
+cd dbs
+python test_llm.py bert
+python test_llm.py gpt2
+```
+
 ## Files
 
 - `dbs/`: Main source code.
