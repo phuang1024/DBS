@@ -28,7 +28,7 @@ class EGHookState:
         # 4: decode
         # 5: dequantize
         # 6: to_device
-        #self.profiling = [0] * 100
+        self.profiling = [0] * 100
 
         #self.grads = []
 
@@ -47,9 +47,13 @@ def ddp_eg_coding(state: None | EGHookState, bucket):
     #t1 = time.time()
     grad = grad.cpu()
     #t2 = time.time()
-    grad = (grad * QUANT_FAC).int()
+    grad = (grad * QUANT_FAC).to(torch.int32)
+    positive = grad > 0
+    grad = torch.abs(grad) * 2
+    grad[positive] -= 1
     #t3 = time.time()
-    grad_eg = encode(grad)
+    words, bits = encode(grad)
+    grad_eg = (words.view(torch.uint8), bits, grad.numel())
     #t4 = time.time()
     #state.profiling[0] += t2 - t1
     #state.profiling[1] += t3 - t2
@@ -59,7 +63,7 @@ def ddp_eg_coding(state: None | EGHookState, bucket):
         # Update stats.
         state.calls += 1
         state.params += grad.numel()
-        state.bytes += grad_eg.numel()
+        state.bytes += grad_eg[0].numel()
 
     # All gather.
     world_size = dist.get_world_size()
@@ -71,7 +75,14 @@ def ddp_eg_coding(state: None | EGHookState, bucket):
 
     # Decode result.
     #t1 = time.time()
-    grad_list = [decode(data).long() for data in gather_list]
+    grad_list = []
+    for data in gather_list:
+        decoded = decode(data[0].view(torch.uint64), data[1], data[2])
+        positive = decoded % 2 == 1
+        decoded[positive] += 1
+        decoded //= 2
+        decoded[~positive] *= -1
+        grad_list.append(decoded)
     #t2 = time.time()
     grad = torch.stack(grad_list).sum(dim=0).float() / QUANT_FAC
     #t3 = time.time()

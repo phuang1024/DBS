@@ -11,7 +11,7 @@ from transformers import (
 )
 from datasets import load_dataset
 
-TRAIN_LEN = 2000
+TRAIN_LEN = 5000
 EVAL_LEN = 500
 
 
