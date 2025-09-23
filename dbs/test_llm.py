@@ -48,7 +48,7 @@ class EGTrainer(Trainer):
         # Register DDP hook
         if not isinstance(model, DDP):
             model = DDP(model)
-        model.register_comm_hook(state=hook_state, hook=ddp_eg_coding)
+        model.register_comm_hook(state=hook_state, hook=_noop)
 
         return model
 
