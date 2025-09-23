@@ -36,8 +36,8 @@ class EGTrainer(Trainer):
 
 def train(rank):
     # Set rank to "0" because I only have one GPU.
-    os.environ["RANK"] = "0"
-    os.environ["LOCAL_RANK"] = "0"
+    os.environ["RANK"] = str(rank)#"0"
+    os.environ["LOCAL_RANK"] = str(rank)#"0"
     os.environ["WORLD_SIZE"] = str(WORLD_SIZE)
 
     dist.init_process_group("gloo", rank=rank, world_size=WORLD_SIZE)
