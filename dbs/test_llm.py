@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 
 import torch
@@ -18,6 +19,24 @@ from ddp_hook import ddp_eg_coding, EGHookState, _noop
 from test_llm_models import load_model
 
 WORLD_SIZE = 2
+
+MODEL = sys.argv[1]
+assert MODEL in ("bert", "gpt2")
+
+RUN_ID = str(int(time.time()))
+os.makedirs(f"./runs/{RUN_ID}/", exist_ok=True)
+LOG_FILE = open(f"./runs/{RUN_ID}/log.txt", "w")
+
+
+def log(msg: str):
+    """
+    Print and write to log file.
+    """
+    print(msg)
+    LOG_FILE.write(msg + "\n")
+    LOG_FILE.flush()
+
+log(f"Model: {MODEL}")
 
 
 hook_state = EGHookState()
@@ -42,20 +61,20 @@ def train(rank):
 
     dist.init_process_group("gloo", rank=rank, world_size=WORLD_SIZE)
 
-    model, train_dataset, eval_dataset = load_model("bert")
-    print(f"Model parameters: {sum(p.numel() for p in model.parameters())}")
+    model, train_dataset, eval_dataset = load_model(MODEL)
+    log(f"Model parameters: {sum(p.numel() for p in model.parameters())}")
 
     print("Training.")
     training_args = TrainingArguments(
-        output_dir="./bert_out",
+        output_dir=f"./runs/{RUN_ID}/",
         eval_strategy="epoch",
         save_strategy="no",
         per_device_train_batch_size=16,
         per_device_eval_batch_size=16,
-        num_train_epochs=1,
+        num_train_epochs=10,
         logging_steps=50,
         fp16=False,
-        report_to="none",
+        report_to=["tensorboard"],
         ddp_backend="gloo",
     )
     trainer = EGTrainer(
@@ -69,18 +88,18 @@ def train(rank):
     trainer.train()
     elapse = time.time() - time_start
     if rank == 0:
-        print(f"Training time: {elapse:.2f} seconds")
+        log(f"Training time: {elapse:.2f} seconds")
 
     if rank == 0:
-        print(f"DDP Hook calls: {hook_state.calls}")
-        print(f"Total params transferred: {hook_state.params}")
-        print(f"Total bytes transferred: {hook_state.bytes}")
-        #print(f"Profiling: {state.profiling[:7]}")
+        log(f"DDP Hook calls: {hook_state.calls}")
+        log(f"Total params transferred: {hook_state.params}")
+        log(f"Total bytes transferred: {hook_state.bytes}")
+        log(f"Profiling: {hook_state.profiling[:7]}")
 
     print("Evaluating")
     eval_results = trainer.evaluate()
     if rank == 0:
-        print(f"Eval results: {eval_results}")
+        log(f"Eval results: {eval_results}")
 
     print(f"Rank {rank} finished.")
     #torch.save(hook_state.grads, "grads.pt")
@@ -93,6 +112,8 @@ def main():
         nprocs=WORLD_SIZE,
         join=True,
     )
+
+    LOG_FILE.close()
 
 
 if __name__ == "__main__":

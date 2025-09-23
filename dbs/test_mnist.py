@@ -12,7 +12,7 @@ import torch.nn as nn
 import torchvision
 from torch.nn.parallel import DistributedDataParallel as DDP
 
-from ddp_hook import ddp_eg_coding, EGHookState, _vanilla
+from ddp_hook import ddp_eg_coding, EGHookState, _noop
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
