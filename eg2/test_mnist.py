@@ -12,7 +12,7 @@ import torch.nn as nn
 import torchvision
 from torch.nn.parallel import DistributedDataParallel as DDP
 
-from ddp_hook import custom_hook
+from ddp_hook import custom_hook, EGHookState
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -58,7 +58,8 @@ def train(rank, world_size):
 
     ddp_model = DDP(model)
     print("Registering custom hook")
-    ddp_model.register_comm_hook(state=None, hook=custom_hook)
+    hook_state = EGHookState()
+    ddp_model.register_comm_hook(state=hook_state, hook=custom_hook)
 
     criterion = nn.CrossEntropyLoss()
     optim = torch.optim.Adam(ddp_model.parameters(), lr=1e-3)
@@ -83,12 +84,10 @@ def train(rank, world_size):
     print(f"Rank {rank} finished training")
     if rank == 0:
         print(f"Elapsed time: {elapse:.2f} seconds")
-        """
         print("Hook stats:")
         print(f"  calls: {hook_state.calls}")
         print(f"  params transferred: {hook_state.params}")
         print(f"  bytes transferred: {hook_state.bytes}")
-        """
 
 
 def main():

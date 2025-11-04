@@ -2,14 +2,43 @@
 Implement the all reduce operation in a custom DDP communication hook.
 """
 
-import os
-import time
-
 import torch
 import torch.distributed as dist
 
 
-def custom_hook(state: None, bucket):
+class EGHookState:
+    def __init__(self):
+        # Number of hook calls.
+        self.calls = 0
+        # Total number of parameters transferred.
+        self.params = 0
+        # Total number of bytes transferred.
+        self.bytes = 0
+
+
+def send_comp(tensor, rank, state: EGHookState):
+    """
+    Send compressed tensor to rank.
+
+    Stats tracking is done here.
+    """
+    state.calls += 1
+    state.params += tensor.numel()
+    state.bytes += tensor.element_size() * tensor.numel()
+
+    req = dist.isend(tensor, rank, tag=0)
+    return req
+
+
+def recv_comp(tensor, rank):
+    """
+    Receive compressed tensor from rank.
+    """
+    req = dist.irecv(tensor, rank, tag=0)
+    return req
+
+
+def custom_hook(state: EGHookState, bucket):
     """
     Ring implementation of all reduce.
     """
@@ -28,8 +57,8 @@ def custom_hook(state: None, bucket):
         send_tensor = tensor[send_offset : send_offset + chunk_size]
         recv_tensor = torch.zeros_like(send_tensor)
 
-        send_req = dist.isend(send_tensor, (rank + 1) % world_size, tag=0)
-        recv_req = dist.irecv(recv_tensor, (rank - 1) % world_size, tag=0)
+        send_req = send_comp(send_tensor, (rank + 1) % world_size, state)
+        recv_req = recv_comp(recv_tensor, (rank - 1) % world_size)
         send_req.wait()
         recv_req.wait()
 
@@ -44,8 +73,8 @@ def custom_hook(state: None, bucket):
         send_tensor = tensor[send_offset : send_offset + chunk_size]
         recv_tensor = torch.zeros_like(send_tensor)
 
-        send_req = dist.isend(send_tensor, (rank + 1) % world_size, tag=0)
-        recv_req = dist.irecv(recv_tensor, (rank - 1) % world_size, tag=0)
+        send_req = send_comp(send_tensor, (rank + 1) % world_size, state)
+        recv_req = recv_comp(recv_tensor, (rank - 1) % world_size)
         send_req.wait()
         recv_req.wait()
 
