@@ -24,7 +24,7 @@ public:
     }
 
     void write(uint64_t value, int bits) {
-        // Index of bit to write next.
+        // Index of bit in value to write next.
         int i = bits - 1;
 
         // Batch write bits.
@@ -80,18 +80,55 @@ public:
      */
     bool read(int bits, uint64_t& r_value) {
         r_value = 0;
-        for (int i = 0; i < bits; ++i) {
-            if (byte_pos >= buffer_size) {
-                return false;
-            }
+
+        // Index of bit in r_value to write next.
+        int i = bits - 1;
+
+        // Batch read bits.
+        while (i >= 0) {
             if (bit_pos < 0) {
                 bit_pos = 63;
                 byte_pos++;
             }
-            r_value |= ((buffer[byte_pos] >> bit_pos) & 1) << (bits - i - 1);
-            bit_pos--;
+            if (byte_pos >= buffer_size) {
+                return false;
+            }
+
+            int bits_to_read = std::min(i + 1, bit_pos + 1);
+            uint64_t chunk = (buffer[byte_pos] >> (bit_pos - bits_to_read + 1)) & ((1ULL << bits_to_read) - 1);
+            r_value |= (chunk << (i - bits_to_read + 1));
+            bit_pos -= bits_to_read;
+            i -= bits_to_read;
         }
+
         return true;
+    }
+
+    /**
+     * Count the number of zeros until the next one bit.
+     * Advances pointer to the next one bit; i.e. the next bit read will be the one.
+     */
+    bool read_zeros(int& r_count) {
+        r_count = 0;
+
+        while (true) {
+            if (bit_pos < 0) {
+                bit_pos = 63;
+                byte_pos++;
+            }
+            if (byte_pos >= buffer_size) {
+                return false;
+            }
+
+            uint64_t byte = (bit_pos == 63) ? buffer[byte_pos] : buffer[byte_pos] & ((1ULL << (bit_pos + 1)) - 1);
+            int count = std::countl_zero(byte) - 63 + bit_pos;
+            r_count += count;
+            bit_pos -= count;
+            if (bit_pos >= 0) {
+                // Found a one bit
+                return true;
+            }
+        }
     }
 };
 
@@ -152,24 +189,14 @@ torch::Tensor encode_tensor(torch::Tensor data) {
 bool decode_value(BitReader& reader, uint64_t& r_value) {
     // Count leading zeros
     int num_bits = 0;
-    uint64_t bit;
-    while (true) {
-        if (!reader.read(1, bit)) {
-            return false;
-        }
-        if (bit) {
-            break;
-        }
-        num_bits++;
-    }
+    reader.read_zeros(num_bits);
 
     // Read the value
-    if (!reader.read(num_bits, r_value)) {
+    if (!reader.read(num_bits + 1, r_value)) {
         return false;
     }
-    // Add the leading 1 bit
-    r_value |= (1 << num_bits);
     r_value -= 1;
+
     return true;
 }
 
