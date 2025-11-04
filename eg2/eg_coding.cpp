@@ -24,28 +24,36 @@ public:
     }
 
     void write(uint64_t value, int bits) {
-        for (int i = bits - 1; i >= 0; --i) {
+        // Index of bit to write next.
+        int i = bits - 1;
+
+        // Batch write bits.
+        while (i >= 0) {
             if (bit_pos < 0) {
                 buffer.push_back(0);
                 bit_pos = 63;
             }
-            uint64_t bit = (value >> i) & 1;
-            buffer.back() |= (bit << bit_pos);
-            bit_pos--;
+
+            int bits_to_write = std::min(i + 1, bit_pos + 1);
+            uint64_t chunk = (value >> (i - bits_to_write + 1)) & ((1ULL << bits_to_write) - 1);
+            buffer.back() |= (chunk << (bit_pos - bits_to_write + 1));
+            bit_pos -= bits_to_write;
+            i -= bits_to_write;
         }
     }
 
-    // Only advances the bit counter.
-    // NOTE: Requires 0 <= bits < 64.
-    /*
+    /**
+     * Write N zero bits.
+     * Only advances the bit counter.
+     * Requires 0 <= bits < 64.
+     */
     void write_zeros(int bits) {
-        bit_pos += bits;
+        bit_pos -= bits;
         if (bit_pos < 0) {
             buffer.push_back(0);
             bit_pos = 64 + bit_pos;
         }
     }
-    */
 };
 
 
@@ -94,7 +102,7 @@ public:
 void encode_value(uint64_t value, BitWriter& writer) {
     value += 1;
     int num_bits = 64 - std::countl_zero(value);
-    writer.write(0, num_bits - 1);
+    writer.write_zeros(num_bits - 1);
     writer.write(value, num_bits);
 }
 
