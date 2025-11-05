@@ -152,10 +152,10 @@ void encode_value(uint64_t value, BitWriter& writer) {
 torch::Tensor encode_tensor(torch::Tensor data) {
     BitWriter writer;
 
-    auto accessor = data.accessor<int64_t, 1>();
+    auto accessor = data.accessor<int8_t, 1>();
     int i = 0;
     while (i < data.size(0)) {
-        int64_t value = accessor[i];
+        int64_t value = (int64_t)accessor[i];
         uint64_t pos_value = (value > 0) ? (2 * value - 1) : (-2 * value);
         encode_value(pos_value, writer);
 
@@ -205,7 +205,7 @@ bool decode_value(BitReader& reader, uint64_t& r_value) {
 torch::Tensor decode_tensor(torch::Tensor data) {
     BitReader reader(data.data_ptr<uint64_t>(), data.size(0));
 
-    std::vector<uint64_t> values;
+    std::vector<int8_t> values;
     while (true) {
         uint64_t pos_value;
         if (!decode_value(reader, pos_value)) {
@@ -223,11 +223,11 @@ torch::Tensor decode_tensor(torch::Tensor data) {
                 values.push_back(0);
             }
         } else {
-            values.push_back(value);
+            values.push_back((int8_t)value);
         }
     }
 
-    auto options = torch::TensorOptions().dtype(torch::kInt64);
+    auto options = torch::TensorOptions().dtype(torch::kInt8);
     return torch::from_blob(values.data(), {(int64_t)values.size()}, options).clone();
 }
 

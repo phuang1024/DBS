@@ -12,11 +12,11 @@ encode_tensor = _eg_coding.encode_tensor
 decode_tensor = _eg_coding.decode_tensor
 
 # Warm up
-encode_tensor(torch.randn(1000).long())
+encode_tensor(torch.randn(1000).to(torch.int8))
 
 
 def speed_test():
-    tensor = (torch.randn(int(1e7)) * 100).long()
+    tensor = (torch.randn(int(1e7)) * 100).to(torch.int8)
 
     import time
 
