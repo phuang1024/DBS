@@ -5,6 +5,8 @@ Implement the all reduce operation in a custom DDP communication hook.
 import torch
 import torch.distributed as dist
 
+QUANT_FAC = 1000
+
 
 class EGHookState:
     def __init__(self):
@@ -55,12 +57,16 @@ def custom_hook(state: EGHookState, bucket):
         send_offset = send_chunk_i * chunk_size
         recv_offset = recv_chunk_i * chunk_size
         send_tensor = tensor[send_offset : send_offset + chunk_size]
+
+        send_tensor = (send_tensor * QUANT_FAC).to(torch.int8)
         recv_tensor = torch.zeros_like(send_tensor)
 
         send_req = send_comp(send_tensor, (rank + 1) % world_size, state)
         recv_req = recv_comp(recv_tensor, (rank - 1) % world_size)
         send_req.wait()
         recv_req.wait()
+
+        recv_tensor = (recv_tensor.to(torch.float32)) / QUANT_FAC
 
         tensor[recv_offset : recv_offset + chunk_size] += recv_tensor
 
@@ -71,12 +77,16 @@ def custom_hook(state: EGHookState, bucket):
         send_offset = send_chunk_i * chunk_size
         recv_offset = recv_chunk_i * chunk_size
         send_tensor = tensor[send_offset : send_offset + chunk_size]
+
+        send_tensor = (send_tensor * QUANT_FAC).to(torch.int8)
         recv_tensor = torch.zeros_like(send_tensor)
 
         send_req = send_comp(send_tensor, (rank + 1) % world_size, state)
         recv_req = recv_comp(recv_tensor, (rank - 1) % world_size)
         send_req.wait()
         recv_req.wait()
+
+        recv_tensor = (recv_tensor.to(torch.float32)) / QUANT_FAC
 
         tensor[recv_offset : recv_offset + chunk_size] = recv_tensor
 

@@ -159,7 +159,6 @@ torch::Tensor encode_tensor(torch::Tensor data) {
         uint64_t pos_value = (value > 0) ? (2 * value - 1) : (-2 * value);
         encode_value(pos_value, writer);
 
-        /*
         if (value == 0) {
             // Count run length of zeros
             int run_length = 1;
@@ -171,10 +170,7 @@ torch::Tensor encode_tensor(torch::Tensor data) {
         } else {
             i++;
         }
-        */
-        i++;
     }
-    //writer.finish();
 
     auto options = torch::TensorOptions().dtype(torch::kUInt64);
     torch::Tensor result = torch::from_blob(writer.buffer.data(), {(int64_t)writer.buffer.size()}, options).clone();
@@ -217,7 +213,6 @@ torch::Tensor decode_tensor(torch::Tensor data) {
         }
 
         int64_t value = (pos_value & 1) ? ((pos_value + 1) / 2) : (-(pos_value / 2));
-        /*
         if (value == 0) {
             // Decode run length of zeros
             uint64_t run_length;
@@ -230,8 +225,6 @@ torch::Tensor decode_tensor(torch::Tensor data) {
         } else {
             values.push_back(value);
         }
-        */
-        values.push_back(value);
     }
 
     auto options = torch::TensorOptions().dtype(torch::kInt64);
