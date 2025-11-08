@@ -5,6 +5,8 @@ Implement the all reduce operation in a custom DDP communication hook.
 import torch
 import torch.distributed as dist
 
+from eg_coding import encode_tensor, decode_tensor
+
 QUANT_FAC = 1000
 
 
@@ -18,26 +20,41 @@ class EGHookState:
         self.bytes = 0
 
 
-def send_comp(tensor, rank, state: EGHookState):
+def send_and_recv_compressed(send_tensor, send_rank, recv_rank, state: EGHookState):
     """
-    Send compressed tensor to rank.
+    Quantize and compress the tensor.
+    Send to send_rank.
+    Expect to receive the same format from recv_rank.
+    Decompress and dequantize received tensor.
+    Update stats of send tensor in state.
+    """
+    # Encode data tensor.
+    send_tensor = (send_tensor * QUANT_FAC).to(torch.int8)
 
-    Stats tracking is done here.
-    """
+    # Update stats.
     state.calls += 1
-    state.params += tensor.numel()
-    state.bytes += tensor.element_size() * tensor.numel()
+    state.params += send_tensor.numel()
+    state.bytes += send_tensor.element_size() * send_tensor.numel()
 
-    req = dist.isend(tensor, rank, tag=0)
-    return req
+    # Send and receive length.
+    send_len_tensor = torch.tensor([send_tensor.numel()], dtype=torch.int32)
+    send_req = dist.isend(send_len_tensor, send_rank, tag=0)
+    recv_len_tensor = torch.tensor([0], dtype=torch.int32)
+    recv_req = dist.irecv(recv_len_tensor, recv_rank, tag=0)
+    send_req.wait()
+    recv_req.wait()
 
+    # Send and receive data tensor.
+    recv_tensor = torch.zeros(recv_len_tensor.item(), dtype=torch.int8)
+    send_req = dist.isend(send_tensor, send_rank, tag=1)
+    recv_req = dist.irecv(recv_tensor, recv_rank, tag=1)
+    send_req.wait()
+    recv_req.wait()
 
-def recv_comp(tensor, rank):
-    """
-    Receive compressed tensor from rank.
-    """
-    req = dist.irecv(tensor, rank, tag=0)
-    return req
+    # Decode received tensor.
+    recv_tensor = (recv_tensor.to(torch.float32)) / QUANT_FAC
+
+    return recv_tensor
 
 
 def custom_hook(state: EGHookState, bucket):
@@ -52,21 +69,14 @@ def custom_hook(state: EGHookState, bucket):
     # Phase 1
     # After phase 1, rank i has the sum of chunk i + 1
     for i in range(world_size - 1):
+        # Determine send and recv chunks.
         send_chunk_i = (rank - i) % world_size
         recv_chunk_i = (rank - i - 1) % world_size
         send_offset = send_chunk_i * chunk_size
         recv_offset = recv_chunk_i * chunk_size
+
         send_tensor = tensor[send_offset : send_offset + chunk_size]
-
-        send_tensor = (send_tensor * QUANT_FAC).to(torch.int8)
-        recv_tensor = torch.zeros_like(send_tensor)
-
-        send_req = send_comp(send_tensor, (rank + 1) % world_size, state)
-        recv_req = recv_comp(recv_tensor, (rank - 1) % world_size)
-        send_req.wait()
-        recv_req.wait()
-
-        recv_tensor = (recv_tensor.to(torch.float32)) / QUANT_FAC
+        recv_tensor = send_and_recv_compressed(send_tensor, (rank + 1) % world_size, (rank - 1) % world_size, state)
 
         tensor[recv_offset : recv_offset + chunk_size] += recv_tensor
 
@@ -76,17 +86,9 @@ def custom_hook(state: EGHookState, bucket):
         recv_chunk_i = (rank - i) % world_size
         send_offset = send_chunk_i * chunk_size
         recv_offset = recv_chunk_i * chunk_size
+
         send_tensor = tensor[send_offset : send_offset + chunk_size]
-
-        send_tensor = (send_tensor * QUANT_FAC).to(torch.int8)
-        recv_tensor = torch.zeros_like(send_tensor)
-
-        send_req = send_comp(send_tensor, (rank + 1) % world_size, state)
-        recv_req = recv_comp(recv_tensor, (rank - 1) % world_size)
-        send_req.wait()
-        recv_req.wait()
-
-        recv_tensor = (recv_tensor.to(torch.float32)) / QUANT_FAC
+        recv_tensor = send_and_recv_compressed(send_tensor, (rank + 1) % world_size, (rank - 1) % world_size, state)
 
         tensor[recv_offset : recv_offset + chunk_size] = recv_tensor
 
