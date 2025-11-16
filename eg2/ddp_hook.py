@@ -20,6 +20,22 @@ class EGHookState:
         self.bytes = 0
 
 
+def compress_tensor(tensor):
+    """
+    float32 -> int8
+    Quantization and encoding.
+    """
+    tensor = (tensor * QUANT_FAC).to(torch.int8)
+    tensor = encode_tensor(tensor).view(torch.int8)
+    return tensor
+
+
+def decompress_tensor(tensor):
+    tensor = decode_tensor(tensor.view(torch.uint64))
+    tensor = (tensor.to(torch.float32)) / QUANT_FAC
+    return tensor
+
+
 def send_and_recv_compressed(send_tensor, send_rank, recv_rank, state: EGHookState):
     """
     Quantize and compress the tensor.
@@ -31,8 +47,7 @@ def send_and_recv_compressed(send_tensor, send_rank, recv_rank, state: EGHookSta
     # Encode data tensor.
     state.calls += 1
     state.params += send_tensor.numel()
-    send_tensor = (send_tensor * QUANT_FAC).to(torch.int8)
-    send_tensor = encode_tensor(send_tensor).view(torch.int8)
+    send_tensor = compress_tensor(send_tensor)
     state.bytes += send_tensor.element_size() * send_tensor.numel()
 
     # Send and receive length.
@@ -51,8 +66,7 @@ def send_and_recv_compressed(send_tensor, send_rank, recv_rank, state: EGHookSta
     recv_req.wait()
 
     # Decode received tensor.
-    recv_tensor = decode_tensor(recv_tensor.view(torch.uint64))
-    recv_tensor = (recv_tensor.to(torch.float32)) / QUANT_FAC
+    recv_tensor = decompress_tensor(recv_tensor)
 
     return recv_tensor
 
