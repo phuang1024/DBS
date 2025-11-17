@@ -31,7 +31,7 @@ mnist = torchvision.datasets.MNIST(
 train_loader = torch.utils.data.DataLoader(
     mnist,
     batch_size=BATCH_SIZE,
-    shuffle=True,
+    shuffle=False,
 )
 
 

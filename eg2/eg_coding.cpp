@@ -162,7 +162,7 @@ torch::Tensor encode_tensor(torch::Tensor data) {
         if (value == 0) {
             // Count run length of zeros
             int run_length = 1;
-            while (i + run_length < data.size(0) && accessor[i + run_length] == 0) {
+            while (i + run_length < data.size(0) && accessor[i + run_length] == value) {
                 run_length++;
             }
             encode_value(run_length, writer);
@@ -220,7 +220,7 @@ torch::Tensor decode_tensor(torch::Tensor data) {
                 break;
             }
             for (uint64_t i = 0; i < run_length; ++i) {
-                values.push_back(0);
+                values.push_back(value);
             }
         } else {
             values.push_back((int8_t)value);
