@@ -24,24 +24,21 @@ class EGHookState:
 
 def compress_tensor(tensor):
     """
-    float32 -> int8
     Quantization and encoding.
-    """
-    zero_inds = tensor == 0
-    #zero_inds = tensor.abs() < MEAN
-    tensor = torch.sign(tensor).to(torch.int8)
-    tensor[zero_inds] = 0
 
+    tensor: float32
+    -> quantization: int8
+    -> EG coding: uint64
+    -> view as int8: int8
+    """
+    tensor = torch.sign(tensor).to(torch.int8)
     tensor = encode_tensor(tensor).view(torch.int8)
     return tensor
 
 
 def decompress_tensor(tensor):
     tensor = decode_tensor(tensor.view(torch.uint64))
-
-    tensor = tensor.to(torch.float32)
-    tensor = tensor * MEAN
-
+    tensor = tensor.to(torch.float32) * MEAN
     return tensor
 
 
@@ -53,22 +50,27 @@ def send_and_recv_compressed(send_tensor, send_rank, recv_rank, state: EGHookSta
     Decompress and dequantize received tensor.
     Update stats of send tensor in state.
     """
-    # Encode data tensor.
     state.calls += 1
     state.params += send_tensor.numel()
+
+    # Encode data tensor.
+    # send_len_tensor is (original_numel, after_encoding_numel)
+    send_len_tensor = torch.zeros((2,), dtype=torch.int32)
+    send_len_tensor[0] = send_tensor.numel()
     send_tensor = compress_tensor(send_tensor)
+    send_len_tensor[1] = send_tensor.numel()
+
     state.bytes += send_tensor.element_size() * send_tensor.numel()
 
     # Send and receive length.
-    send_len_tensor = torch.tensor([send_tensor.numel()], dtype=torch.int32)
     send_req = dist.isend(send_len_tensor, send_rank, tag=0)
-    recv_len_tensor = torch.tensor([0], dtype=torch.int32)
+    recv_len_tensor = torch.zeros_like(send_len_tensor)
     recv_req = dist.irecv(recv_len_tensor, recv_rank, tag=0)
     send_req.wait()
     recv_req.wait()
 
     # Send and receive data tensor.
-    recv_tensor = torch.zeros(recv_len_tensor.item(), dtype=torch.int8)
+    recv_tensor = torch.zeros(recv_len_tensor[1].item(), dtype=torch.int8)
     send_req = dist.isend(send_tensor, send_rank, tag=1)
     recv_req = dist.irecv(recv_tensor, recv_rank, tag=1)
     send_req.wait()
@@ -76,6 +78,7 @@ def send_and_recv_compressed(send_tensor, send_rank, recv_rank, state: EGHookSta
 
     # Decode received tensor.
     recv_tensor = decompress_tensor(recv_tensor)
+    recv_tensor = recv_tensor[:send_len_tensor[0].item()]
 
     return recv_tensor
 

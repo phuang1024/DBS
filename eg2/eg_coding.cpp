@@ -137,10 +137,35 @@ public:
  * Encode a uint64 value using EG to bit stream.
  */
 void encode_value(uint64_t value, BitWriter& writer) {
+    /*
     value += 1;
     int num_bits = 64 - std::countl_zero(value);
     writer.write_zeros(num_bits - 1);
     writer.write(value, num_bits);
+    */
+    writer.write(value, 64);
+}
+
+
+/**
+ * Decode a uint64 value using EG from bit stream.
+ * return: Whether decode was successful
+ */
+bool decode_value(BitReader& reader, uint64_t& r_value) {
+    /*
+    // Count leading zeros
+    int num_bits = 0;
+    reader.read_zeros(num_bits);
+
+    // Read the value
+    if (!reader.read(num_bits + 1, r_value)) {
+        return false;
+    }
+    r_value -= 1;
+
+    return true;
+    */
+    return reader.read(64, r_value);
 }
 
 
@@ -179,21 +204,31 @@ torch::Tensor encode_tensor(torch::Tensor data) {
 
 
 /**
- * Decode a uint64 value using EG from bit stream.
- * return: Whether decode was successful
+ * Use the batched encoding method:
+ * Combine every 8 int8 values into a single uint64 value to encode.
+ * First, each int8 value is converted into uint8 via the standard EG formula;
+ *   therefore, each int8 must be in [-127, 128].
  */
-bool decode_value(BitReader& reader, uint64_t& r_value) {
-    // Count leading zeros
-    int num_bits = 0;
-    reader.read_zeros(num_bits);
+torch::Tensor batched_encode_tensor(torch::Tensor data) {
+    BitWriter writer;
 
-    // Read the value
-    if (!reader.read(num_bits + 1, r_value)) {
-        return false;
+    auto accessor = data.accessor<int8_t, 1>();
+    for (int i = 0; i < data.size(0); i += 8) {
+        uint64_t batch_value = 0;
+        for (int j = 0; j < 8; j++) {
+            if (i + j >= data.size(0)) {
+                break;
+            }
+            int8_t value = accessor[i + j];
+            uint8_t pos_value = (value > 0) ? (2 * value - 1) : (-2 * value);
+            batch_value |= value << (8 * j);
+        }
+        encode_value(batch_value, writer);
     }
-    r_value -= 1;
 
-    return true;
+    auto options = torch::TensorOptions().dtype(torch::kUInt64);
+    torch::Tensor result = torch::from_blob(writer.buffer.data(), {(int64_t)writer.buffer.size()}, options).clone();
+    return result;
 }
 
 
@@ -232,7 +267,36 @@ torch::Tensor decode_tensor(torch::Tensor data) {
 }
 
 
+/**
+ * Batched decoding method.
+ * The return tensor length will be a multiple of 8,
+ *   which is the original tensor zero padded.
+ */
+torch::Tensor batched_decode_tensor(torch::Tensor data) {
+    BitReader reader(data.data_ptr<uint64_t>(), data.size(0));
+
+    std::vector<int8_t> values;
+    while (true) {
+        uint64_t batch_value;
+        if (!decode_value(reader, batch_value)) {
+            break;
+        }
+
+        for (int j = 0; j < 8; j++) {
+            uint8_t pos_value = (batch_value >> (8 * j)) & (uint64_t)255;
+            int8_t value = (pos_value & 1) ? ((pos_value + 1) / 2) : (-(pos_value / 2));
+            values.push_back(value);
+        }
+    }
+
+    auto options = torch::TensorOptions().dtype(torch::kInt8);
+    return torch::from_blob(values.data(), {(int64_t)values.size()}, options).clone();
+}
+
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-    m.def("encode_tensor", &encode_tensor, "");
-    m.def("decode_tensor", &decode_tensor, "");
+    //m.def("encode_tensor", &encode_tensor, "");
+    //m.def("decode_tensor", &decode_tensor, "");
+    m.def("encode_tensor", &batched_encode_tensor, "");
+    m.def("decode_tensor", &batched_decode_tensor, "");
 }
