@@ -1,7 +1,14 @@
 /**
- * Exponential golomb coding implementation.
+ * Exponential Golomb coding implementation for torch tensors.
  *
- * Code words are uint64_t.
+ * This module provides:
+ * - Bit stream r/w classes.
+ * - Exp-Golomb encode and decode functions.
+ * - Various methods to encode tensors.
+ *
+ * Coding turns int8 values into uint64 words.
+ * int8 are turned into uint8 via standard EG mapping.
+ *
  * The MSB of values to encode are written first (a requirement of EG coding).
  * The MSB of code words are used first, to allow for efficiency.
  */
@@ -65,18 +72,16 @@ public:
 /**
  * Encode a uint64 value using EG to bit stream.
  */
-void encode_value(uint64_t value, BitWriter& writer);
-
+void encode_eg(uint64_t value, BitWriter& writer);
 
 /**
  * Decode a uint64 value using EG from bit stream.
  * return: Whether decode was successful
  */
-bool decode_value(BitReader& reader, uint64_t& r_value);
-
+bool decode_eg(BitReader& reader, uint64_t& r_value);
 
 /**
- * Bit shuffling for optimal compression:
+ * Bit permutation for optimal compression:
  * The highest 8 bits of the output
  *   is each of the highest 8 bits of each 8-bit value.
  * Then the next 8 bits of the output
@@ -84,33 +89,24 @@ bool decode_value(BitReader& reader, uint64_t& r_value);
  *
  * This operation is it's own inverse.
  */
-uint64_t shuffle_encode(uint64_t value);
+uint64_t bit_sig_perm(uint64_t value);
 
 
 /**
- * Encode a list of values, using negative number support and run length coding.
- * @param data int64 tensor of shape (N,) containing the values to encode
- * @return uint64 tensor of shape (M,) containing the encoded bitstream
+ * Standard encoding method.
+ * Encodes parameters one by one.
+ * Uses run length coding for zeros.
  */
-torch::Tensor encode_tensor(torch::Tensor data);
+torch::Tensor std_encode_tensor(torch::Tensor data);
+
+torch::Tensor std_decode_tensor(torch::Tensor data);
 
 
 /**
- * Use the batched encoding method:
+ * Batched encoding method:
  * Combine every 8 int8 values into a single uint64 value to encode.
- * First, each int8 value is converted into uint8 via the standard EG formula;
- *   therefore, each int8 must be in [-127, 128].
  */
 torch::Tensor batched_encode_tensor(torch::Tensor data);
-
-
-/**
- * Decode a bitstream into a list of values, using negative number support and run length coding.
- * @param data uint64 tensor of shape (N,) containing the bitstream
- * @return int64 tensor of shape (M,) containing the decoded values
- */
-torch::Tensor decode_tensor(torch::Tensor data);
-
 
 /**
  * Batched decoding method.

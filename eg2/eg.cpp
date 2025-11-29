@@ -7,7 +7,7 @@
 #include "eg_coding.hpp"
 
 
-void encode_value(uint64_t value, BitWriter& writer) {
+void encode_eg(uint64_t value, BitWriter& writer) {
     value += 1;
     int num_bits = 64 - std::countl_zero(value);
     writer.write_zeros(num_bits - 1);
@@ -15,7 +15,7 @@ void encode_value(uint64_t value, BitWriter& writer) {
 }
 
 
-bool decode_value(BitReader& reader, uint64_t& r_value) {
+bool decode_eg(BitReader& reader, uint64_t& r_value) {
     // Count leading zeros
     int num_bits = 0;
     reader.read_zeros(num_bits);
@@ -30,7 +30,7 @@ bool decode_value(BitReader& reader, uint64_t& r_value) {
 }
 
 
-uint64_t shuffle_encode(uint64_t value) {
+uint64_t bit_sig_perm(uint64_t value) {
     uint64_t result = 0;
     for (int bit = 0; bit < 8; bit++) {
         for (int byte = 0; byte < 8; byte++) {

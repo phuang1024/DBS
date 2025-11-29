@@ -21,8 +21,8 @@ torch::Tensor batched_encode_tensor(torch::Tensor data) {
             uint8_t pos_value = (value > 0) ? (2 * value - 1) : (-2 * value);
             batch_value |= (uint64_t)pos_value << (8 * j);
         }
-        batch_value = shuffle_encode(batch_value);
-        encode_value(batch_value, writer);
+        batch_value = bit_sig_perm(batch_value);
+        encode_eg(batch_value, writer);
     }
 
     auto options = torch::TensorOptions().dtype(torch::kUInt64);
@@ -37,10 +37,10 @@ torch::Tensor batched_decode_tensor(torch::Tensor data) {
     std::vector<int8_t> values;
     while (true) {
         uint64_t batch_value;
-        if (!decode_value(reader, batch_value)) {
+        if (!decode_eg(reader, batch_value)) {
             break;
         }
-        batch_value = shuffle_encode(batch_value);
+        batch_value = bit_sig_perm(batch_value);
 
         for (int j = 0; j < 8; j++) {
             uint8_t pos_value = (batch_value >> (8 * j)) & (uint64_t)255;
