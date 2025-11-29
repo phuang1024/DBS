@@ -19,7 +19,8 @@ public:
     // Position of next bit to write. From 63 (MSB) to 0 (LSB).
     int bit_pos;
 
-    BitWriter() : bit_pos(63) {
+    BitWriter() {
+        bit_pos = 63;
         buffer.push_back(0);
     }
 
@@ -49,9 +50,9 @@ public:
      */
     void write_zeros(int bits) {
         bit_pos -= bits;
-        if (bit_pos < 0) {
+        while (bit_pos < 0) {
             buffer.push_back(0);
-            bit_pos = 64 + bit_pos;
+            bit_pos += 64;
         }
     }
 };
@@ -221,7 +222,7 @@ torch::Tensor batched_encode_tensor(torch::Tensor data) {
             }
             int8_t value = accessor[i + j];
             uint8_t pos_value = (value > 0) ? (2 * value - 1) : (-2 * value);
-            batch_value |= value << (8 * j);
+            batch_value |= (uint64_t)pos_value << (8 * j);
         }
         encode_value(batch_value, writer);
     }
