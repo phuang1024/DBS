@@ -11,6 +11,7 @@ _eg_coding = load(
         "batch_encode.cpp",
         "bit_rw.cpp",
         "eg.cpp",
+        "sign_encode.cpp",
         "std_encode.cpp",
     ],
     extra_cflags=["-std=c++20"],

@@ -103,7 +103,7 @@ torch::Tensor std_decode_tensor(torch::Tensor data);
 
 
 /**
- * Batched encoding method:
+ * Batched encoding method.
  * Combine every 8 int8 values into a single uint64 value to encode.
  */
 torch::Tensor batched_encode_tensor(torch::Tensor data);
@@ -114,3 +114,20 @@ torch::Tensor batched_encode_tensor(torch::Tensor data);
  *   which is the original tensor zero padded.
  */
 torch::Tensor batched_decode_tensor(torch::Tensor data);
+
+
+/**
+ * Sign encoding method.
+ * Each value is encoded as two bits:
+ * - 00: zero.
+ * - 01: positive.
+ * - 10: negative.
+ * Therefore, 32 values are packed into a single uint64.
+ */
+torch::Tensor sign_encode_tensor(torch::Tensor data);
+
+/**
+ * The return tensor length will be a multiple of 32,
+ *   which is the original tensor zero padded.
+ */
+torch::Tensor sign_decode_tensor(torch::Tensor data);
