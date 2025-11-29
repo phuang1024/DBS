@@ -36,8 +36,15 @@ public:
             }
 
             int bits_to_write = std::min(i + 1, bit_pos + 1);
-            uint64_t chunk = (value >> (i - bits_to_write + 1)) & ((1ULL << bits_to_write) - 1);
+
+            uint64_t chunk = (value >> (i - bits_to_write + 1));
+            // Only need to mask if not writing full 64 bits.
+            if (bits_to_write < 64) {
+                chunk &= ((1ULL << bits_to_write) - 1);
+            }
+
             buffer.back() |= (chunk << (bit_pos - bits_to_write + 1));
+
             bit_pos -= bits_to_write;
             i -= bits_to_write;
         }
@@ -96,8 +103,14 @@ public:
             }
 
             int bits_to_read = std::min(i + 1, bit_pos + 1);
-            uint64_t chunk = (buffer[byte_pos] >> (bit_pos - bits_to_read + 1)) & ((1ULL << bits_to_read) - 1);
+
+            uint64_t chunk = (buffer[byte_pos] >> (bit_pos - bits_to_read + 1));
+            if (bits_to_read < 64) {
+                chunk &= ((1ULL << bits_to_read) - 1);
+            }
+
             r_value |= (chunk << (i - bits_to_read + 1));
+
             bit_pos -= bits_to_read;
             i -= bits_to_read;
         }
@@ -138,13 +151,10 @@ public:
  * Encode a uint64 value using EG to bit stream.
  */
 void encode_value(uint64_t value, BitWriter& writer) {
-    /*
     value += 1;
     int num_bits = 64 - std::countl_zero(value);
     writer.write_zeros(num_bits - 1);
     writer.write(value, num_bits);
-    */
-    writer.write(value, 64);
 }
 
 
@@ -153,7 +163,6 @@ void encode_value(uint64_t value, BitWriter& writer) {
  * return: Whether decode was successful
  */
 bool decode_value(BitReader& reader, uint64_t& r_value) {
-    /*
     // Count leading zeros
     int num_bits = 0;
     reader.read_zeros(num_bits);
@@ -165,8 +174,6 @@ bool decode_value(BitReader& reader, uint64_t& r_value) {
     r_value -= 1;
 
     return true;
-    */
-    return reader.read(64, r_value);
 }
 
 
