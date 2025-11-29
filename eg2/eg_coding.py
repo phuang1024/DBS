@@ -1,9 +1,18 @@
+"""
+Loads C++ implementation of EG coding via torch.
+"""
+
 import torch
 from torch.utils.cpp_extension import load
 
 _eg_coding = load(
     name="eg_coding",
-    sources=["eg_coding.cpp"],
+    sources=[
+        "batch_encode.cpp",
+        "bit_rw.cpp",
+        "eg.cpp",
+        "std_encode.cpp",
+    ],
     extra_cflags=["-std=c++20"],
     verbose=True,
 )
