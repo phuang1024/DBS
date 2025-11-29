@@ -178,6 +178,27 @@ bool decode_value(BitReader& reader, uint64_t& r_value) {
 
 
 /**
+ * Bit shuffling for optimal compression:
+ * The highest 8 bits of the output
+ *   is each of the highest 8 bits of each 8-bit value.
+ * Then the next 8 bits of the output
+ *   are each of the next 8 bits of each input value.
+ *
+ * This operation is it's own inverse.
+ */
+uint64_t shuffle_encode(uint64_t value) {
+    uint64_t result = 0;
+    for (int bit = 0; bit < 8; bit++) {
+        for (int byte = 0; byte < 8; byte++) {
+            uint64_t bit_value = (value >> (byte * 8 + bit)) & 1ULL;
+            result |= (bit_value << (bit * 8 + byte));
+        }
+    }
+    return result;
+}
+
+
+/**
  * Encode a list of values, using negative number support and run length coding.
  * @param data int64 tensor of shape (N,) containing the values to encode
  * @return uint64 tensor of shape (M,) containing the encoded bitstream
@@ -231,6 +252,7 @@ torch::Tensor batched_encode_tensor(torch::Tensor data) {
             uint8_t pos_value = (value > 0) ? (2 * value - 1) : (-2 * value);
             batch_value |= (uint64_t)pos_value << (8 * j);
         }
+        batch_value = shuffle_encode(batch_value);
         encode_value(batch_value, writer);
     }
 
@@ -289,6 +311,7 @@ torch::Tensor batched_decode_tensor(torch::Tensor data) {
         if (!decode_value(reader, batch_value)) {
             break;
         }
+        batch_value = shuffle_encode(batch_value);
 
         for (int j = 0; j < 8; j++) {
             uint8_t pos_value = (batch_value >> (8 * j)) & (uint64_t)255;
