@@ -7,9 +7,9 @@ import torch.distributed as dist
 
 from eg_coding import encode_tensor, decode_tensor
 
-#QUANT_FAC = 1000
+QUANT_FAC = 5000
 # Mean of abs of grads.
-MEAN = 7e-4
+#MEAN = 7e-4
 
 
 class EGHookState:
@@ -31,14 +31,25 @@ def compress_tensor(tensor):
     -> EG coding: uint64
     -> view as int8: int8
     """
-    tensor = torch.sign(tensor).to(torch.int8)
+    # Sign quantization
+    #tensor = torch.sign(tensor).to(torch.int8)
+
+    # Standard scale quantization
+    tensor = torch.clamp(tensor * QUANT_FAC, -127, 127).to(torch.int8)
+
     tensor = encode_tensor(tensor).view(torch.int8)
     return tensor
 
 
 def decompress_tensor(tensor):
     tensor = decode_tensor(tensor.view(torch.uint64))
-    tensor = tensor.to(torch.float32) * MEAN
+
+    # Sign quantization
+    #tensor = tensor.to(torch.float32) * MEAN
+
+    # Standard scale quantization
+    tensor = tensor.to(torch.float32) / QUANT_FAC
+
     return tensor
 
 
