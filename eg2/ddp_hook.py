@@ -94,6 +94,20 @@ def send_and_recv_compressed(send_tensor, send_rank, recv_rank, state: EGHookSta
     return recv_tensor
 
 
+def send_and_recv_compressed_dummy(send_tensor, send_rank, recv_rank, state: EGHookState):
+    """
+    Dummy send and recv for testing.
+    Sends tensor as is.
+    """
+    recv_tensor = torch.zeros_like(send_tensor)
+    send_req = dist.isend(send_tensor, send_rank, tag=1)
+    recv_req = dist.irecv(recv_tensor, recv_rank, tag=1)
+    send_req.wait()
+    recv_req.wait()
+
+    return recv_tensor
+
+
 def custom_hook(state: EGHookState, bucket):
     """
     Ring implementation of all reduce.
