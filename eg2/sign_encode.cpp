@@ -61,7 +61,9 @@ torch::Tensor sign_decode_tensor(torch::Tensor data) {
 }
 
 
+/*
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("encode_tensor", &sign_encode_tensor, "");
     m.def("decode_tensor", &sign_decode_tensor, "");
 }
+*/
