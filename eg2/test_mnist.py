@@ -14,7 +14,8 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 
 from ddp_hook import custom_hook, EGHookState
 
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# If true, use CPU gloo. Otherwise, use NCCL for GPU.
+USE_GLOO = True
 
 WORLD_SIZE = 2
 BATCH_SIZE = 32
@@ -51,16 +52,26 @@ class TestModel(nn.Module):
 
 
 def train(rank, world_size):
-    dist.init_process_group("gloo", rank=rank, world_size=world_size)
+    # Initialize proper backend.
+    if USE_GLOO:
+        dist.init_process_group("gloo", rank=rank, world_size=world_size)
+        DEVICE = "cpu"
+    else:
+        dist.init_process_group("nccl", rank=rank, world_size=world_size)
+        DEVICE = rank
 
     model = TestModel().to(DEVICE)
     model.train()
 
+    # Wrap model with DDP.
     ddp_model = DDP(model)
+
+    # Register custom communication hook.
     print("Registering custom hook")
     hook_state = EGHookState()
     ddp_model.register_comm_hook(state=hook_state, hook=custom_hook)
 
+    # Standard training stuff.
     criterion = nn.CrossEntropyLoss()
     optim = torch.optim.Adam(ddp_model.parameters(), lr=1e-3)
 
@@ -91,8 +102,6 @@ def train(rank, world_size):
 
 
 def main():
-    print("Using device", DEVICE)
-
     model = TestModel()
     num_params = sum(p.numel() for p in model.parameters())
     print(model)
