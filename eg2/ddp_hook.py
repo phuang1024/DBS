@@ -5,7 +5,8 @@ Implement the all reduce operation in a custom DDP communication hook.
 import torch
 import torch.distributed as dist
 
-from eg_coding import encode_tensor, decode_tensor
+#from eg_coding import encode_tensor, decode_tensor
+from nvcomp_coding import encode_tensor, decode_tensor
 
 QUANT_FAC = 5000
 # Mean abs value of grads.
@@ -37,12 +38,18 @@ def compress_tensor(tensor):
     # Standard scale quantization
     tensor = torch.clamp(tensor * QUANT_FAC, -127, 127).to(torch.int8)
 
-    tensor = encode_tensor(tensor).view(torch.int8)
+    # With EG coding
+    #tensor = encode_tensor(tensor).view(torch.int8)
+    # With nvcomp coding
+    tensor = encode_tensor(tensor)
     return tensor
 
 
 def decompress_tensor(tensor):
-    tensor = decode_tensor(tensor.view(torch.uint64))
+    # With EG coding
+    #tensor = decode_tensor(tensor.view(torch.uint64))
+    # With nvcomp coding
+    tensor = decode_tensor(tensor)
 
     # Sign quantization
     #tensor = tensor.to(torch.float32) * MEAN
