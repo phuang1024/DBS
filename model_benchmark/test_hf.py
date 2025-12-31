@@ -1,3 +1,7 @@
+"""
+Testing script for a single thread BERT fine tuning.
+"""
+
 from transformers import (
     BertTokenizer,
     BertForSequenceClassification,
