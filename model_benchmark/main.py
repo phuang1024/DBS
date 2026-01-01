@@ -7,7 +7,11 @@ Supports various customizations:
 - Gradient compression algorithms.
 """
 
-import argparse
+import os
+
+import torch
+import torch.distributed as dist
+import torch.multiprocessing as mp
 
 from transformers import (
     TrainingArguments,
@@ -16,8 +20,22 @@ from transformers import (
 
 from model import create_dataset, create_model
 
+# Toggle distributed training.
+DO_DIST = True
 
-def main():
+
+def train(rank, world_size):
+    if DO_DIST:
+        os.environ["RANK"] = str(rank)
+        os.environ["WORLD_SIZE"] = str(world_size)
+        os.environ["LOCAL_RANK"] = str(rank)
+
+        dist.init_process_group(
+            backend="nccl",
+            rank=rank,
+            world_size=world_size,
+        )
+
     dataset, tokenizer = create_dataset()
     model = create_model()
 
@@ -50,6 +68,26 @@ def main():
 
     trainer.train()
 
+    if DO_DIST:
+        dist.destroy_process_group()
+
+
+def spawn_dist():
+    world_size = 1
+
+    os.environ["MASTER_ADDR"] = "localhost"
+    os.environ["MASTER_PORT"] = "13579"
+
+    mp.spawn(
+        train,
+        args=(world_size,),
+        nprocs=world_size,
+        join=True,
+    )
+
 
 if __name__ == "__main__":
-    main()
+    if DO_DIST:
+        spawn_dist()
+    else:
+        train(None, None)
