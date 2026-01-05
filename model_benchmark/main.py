@@ -18,6 +18,7 @@ from transformers import (
     Trainer,
 )
 
+from grad_analysis import SaveGradients
 from model import create_dataset, create_model
 
 # Toggle distributed training.
@@ -64,6 +65,8 @@ def train(rank, world_size):
         train_dataset=dataset["train"],
         eval_dataset=dataset["validation"],
         processing_class=tokenizer,
+
+        callbacks=[SaveGradients()],
     )
 
     trainer.train()
