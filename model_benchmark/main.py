@@ -21,7 +21,7 @@ from transformers import (
 from model import create_dataset, create_model
 
 # Toggle distributed training.
-DO_DIST = True
+DO_DIST = False
 
 
 def train(rank, world_size):
@@ -40,11 +40,11 @@ def train(rank, world_size):
     model = create_model()
 
     args = TrainingArguments(
-        output_dir="./results/bert_stsb",
+        output_dir="./results",
 
         per_device_train_batch_size=16,
         per_device_eval_batch_size=16,
-        num_train_epochs=10,
+        num_train_epochs=20,
 
         learning_rate=2e-5,
 
@@ -73,7 +73,7 @@ def train(rank, world_size):
 
 
 def spawn_dist():
-    world_size = 1
+    world_size = 2
 
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = "13579"
