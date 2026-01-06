@@ -7,6 +7,13 @@ from nvidia import nvcomp
 
 from grad_analysis import load_gradients
 
+import os
+import sys
+sys.path.append("../eg2")
+os.chdir("../eg2")
+from eg_coding import encode_tensor, decode_tensor
+os.chdir("../model_benchmark")
+
 QUANT_FACS = (
     100,
     300,
@@ -15,8 +22,9 @@ QUANT_FACS = (
 )
 
 COMP_ALGS = (
+    "EG",
     "LZ4",
-    #"Cascaded",
+    "Cascaded",
     "GDeflate",
     #"CRC32",
 )
@@ -39,26 +47,34 @@ def main():
     grads = load_gradients().cuda()
     print(f"Gradients: shape={grads.shape}, dtype={grads.dtype}, numel={grads.numel()}, total_size={tensor_size(grads)}")
 
-    print("Codecs:", end="\t")
-    print("\t".join(COMP_ALGS))
-
     for quant_fac in QUANT_FACS:
-        print(f"Quant fac: {quant_fac}", end="\t")
+        print(f"Quant fac: {quant_fac}")
         quant_tensor = torch.clamp(grads * quant_fac, -128, 127).to(torch.int8)
 
         for alg in COMP_ALGS:
-            codec = nvcomp.Codec(algorithm=alg)
-            comp = codec.encode(torch_to_nvcomp(quant_tensor))
-            comp_tensor = nvcomp_to_torch(comp).cuda()
+            print(f"  Alg: {alg}", end="\t")
+
+            if alg == "EG":
+                comp_tensor = encode_tensor(quant_tensor.cpu()).cuda()
+            else:
+                codec = nvcomp.Codec(algorithm=alg)
+                comp = codec.encode(torch_to_nvcomp(quant_tensor))
+                comp_tensor = nvcomp_to_torch(comp).cuda()
+
             print(tensor_size(comp_tensor), end="\t")
 
-            # Check correctness
-            decomp_tensor = nvcomp_to_torch(codec.decode(comp))
-            decomp_tensor = decomp_tensor.float() / quant_fac
-            max_diff = torch.max(torch.abs(decomp_tensor - grads))
-            print(f"max_diff={max_diff:.4f}", end="\t")
+            if alg == "EG":
+                decomp_tensor = decode_tensor(comp_tensor.cpu()).cuda()
+            else:
+                decomp_tensor = nvcomp_to_torch(codec.decode(comp))
+                #decomp_tensor = decomp_tensor.float() / quant_fac
 
-        print()
+            # Check correctness
+            if decomp_tensor.shape != quant_tensor.shape:
+                print("Shape mismatch.")
+            else:
+                max_diff = torch.max(torch.abs(decomp_tensor - quant_tensor))
+                print(f"Max diff: {max_diff}")
 
 
 if __name__ == "__main__":
