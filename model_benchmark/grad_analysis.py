@@ -37,6 +37,14 @@ class SaveGradients(TrainerCallback):
             raise KeyboardInterrupt("Exiting after saving gradients.")
 
 
+def load_gradients():
+    print("Loading from gradients.pt")
+    grads = torch.load("gradients.pt")
+    # Flatten and concat
+    grads = torch.cat([g.flatten() for g in grads.values()])
+    return grads
+
+
 def plot_hist(grads):
     plt.hist(grads.cpu().numpy(), bins=100)
     plt.title("Gradients distribution")
@@ -48,11 +56,7 @@ def plot_hist(grads):
 
 
 def main():
-    print("Loading from gradients.pt")
-    grads = torch.load("gradients.pt")
-    # Flatten and concat
-    grads = torch.cat([g.flatten() for g in grads.values()])
-
+    grads = load_gradients()
     plot_hist(grads)
 
 
