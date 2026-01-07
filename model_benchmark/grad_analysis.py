@@ -45,14 +45,16 @@ def load_gradients():
     return grads
 
 
-def plot_hist(grads):
-    plt.hist(grads.cpu().numpy(), bins=100)
-    plt.title("Gradients distribution")
-    plt.ylim(0, 1e5)
-    plt.xlabel("Value")
-    plt.ylabel("Frequency")
-    #plt.show()
-    plt.savefig("asdf.png")
+def plot_hist(grads, scale=1, y_max=1e4):
+    """
+    Histogram of gradients.
+
+    scale: Multiply gradients by this value. Can be used to simulate quantization.
+    """
+    grads = grads.cpu().numpy() * scale
+    plt.hist(grads, bins=100)
+    plt.ylim(0, y_max)
+    plt.savefig("grads.png")
 
 
 def main():

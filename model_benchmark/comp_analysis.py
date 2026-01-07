@@ -2,11 +2,14 @@
 Apply various compression and quantization algorithms to gradients.
 """
 
+import time
+
 import torch
 from nvidia import nvcomp
 
 from grad_analysis import load_gradients
 
+# Load functions from other directory.
 import os
 import sys
 sys.path.append("../eg2")
@@ -15,10 +18,10 @@ from eg_coding import encode_tensor, decode_tensor
 os.chdir("../model_benchmark")
 
 QUANT_FACS = (
-    100,
-    300,
     1000,
-    5000,
+    10000,
+    100000,
+    1000000,
 )
 
 COMP_ALGS = (
@@ -48,11 +51,14 @@ def main():
     print(f"Gradients: shape={grads.shape}, dtype={grads.dtype}, numel={grads.numel()}, total_size={tensor_size(grads)}")
 
     for quant_fac in QUANT_FACS:
-        print(f"Quant fac: {quant_fac}")
         quant_tensor = torch.clamp(grads * quant_fac, -128, 127).to(torch.int8)
+        sparsity = (quant_tensor == 0).sum().item() / quant_tensor.numel()
+        print(f"Quant fac: {quant_fac}. Sparsity: {sparsity:.1%}.")
 
         for alg in COMP_ALGS:
             print(f"  Alg: {alg}", end="\t")
+
+            time_start = time.time()
 
             if alg == "EG":
                 comp_tensor = encode_tensor(quant_tensor.cpu()).cuda()
@@ -69,9 +75,12 @@ def main():
                 decomp_tensor = nvcomp_to_torch(codec.decode(comp))
                 #decomp_tensor = decomp_tensor.float() / quant_fac
 
+            elapse = time.time() - time_start
+            print(f"Time: {elapse:.4f}s", end="\t")
+
             # Check correctness
             if decomp_tensor.shape != quant_tensor.shape:
-                print("Shape mismatch.")
+                print(f"Shape mismatch: in={quant_tensor.shape}, out={decomp_tensor.shape}")
             else:
                 max_diff = torch.max(torch.abs(decomp_tensor - quant_tensor))
                 print(f"Max diff: {max_diff}")
