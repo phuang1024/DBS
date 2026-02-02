@@ -18,7 +18,8 @@ from transformers import (
     Trainer,
 )
 
-from grad_analysis import SaveGradients
+from ddp_hook import RegisterHook
+#from grad_analysis import SaveGradients
 from model import create_dataset, create_model
 
 # Toggle distributed training.
@@ -58,6 +59,10 @@ def train(rank, world_size):
         save_steps=1000,
     )
 
+    callbacks = []
+    if DO_DIST:
+        callbacks.append(RegisterHook())
+
     trainer = Trainer(
         model=model,
         args=args,
@@ -66,7 +71,7 @@ def train(rank, world_size):
         eval_dataset=dataset["validation"],
         processing_class=tokenizer,
 
-        callbacks=[SaveGradients()],
+        callbacks=callbacks,
     )
 
     trainer.train()
